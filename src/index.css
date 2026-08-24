@@ -1,0 +1,137 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600;1,700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+:root {
+  --bg: #050505;
+  --surface: #111111;
+  --surface-raised: #181818;
+  --accent: #C5A059;
+  --accent-hover: #d4af65;
+  --accent-dim: rgba(197, 160, 89, 0.15);
+  --text-main: #EFEFEF;
+  --text-dim: #888888;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --font-header: 'Playfair Display', Georgia, serif;
+  --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.font-serif-display {
+  font-family: var(--font-header);
+}
+
+.glass-surface {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.glass-surface-hover:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(197, 160, 89, 0.35);
+}
+
+.gold-glow {
+  box-shadow: 0 0 25px rgba(197, 160, 89, 0.25);
+}
+
+.gold-accent-text {
+  color: var(--accent);
+}
+
+/* Light Mode Overrides for Crisp Typography */
+[data-theme-category="light"] {
+  --border-subtle: rgba(0, 0, 0, 0.08);
+}
+[data-theme-category="light"] body {
+  background-color: var(--bg);
+  color: var(--text-main);
+}
+
+/* Ebook Reader Highlight Markers */
+.libriaudio-hl {
+  border-radius: 3px;
+  padding: 1px 3px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, filter 0.2s ease;
+  text-decoration: none;
+}
+.libriaudio-hl:hover {
+  filter: brightness(1.15);
+}
+.libriaudio-hl-gold {
+  background-color: rgba(234, 179, 8, 0.28);
+  border-bottom: 2px solid #EAB308;
+  color: inherit;
+}
+.libriaudio-hl-emerald {
+  background-color: rgba(16, 185, 129, 0.28);
+  border-bottom: 2px solid #10B981;
+  color: inherit;
+}
+.libriaudio-hl-sapphire {
+  background-color: rgba(59, 130, 246, 0.28);
+  border-bottom: 2px solid #3B82F6;
+  color: inherit;
+}
+.libriaudio-hl-amethyst {
+  background-color: rgba(168, 85, 247, 0.28);
+  border-bottom: 2px solid #A855F7;
+  color: inherit;
+}
+.libriaudio-search-match {
+  background-color: rgba(251, 146, 60, 0.45);
+  border-bottom: 2px solid #F97316;
+  border-radius: 2px;
+  padding: 0 2px;
+}
+.libriaudio-search-match-active {
+  background-color: rgba(239, 68, 68, 0.6);
+  border-bottom: 2px solid #EF4444;
+  color: #FFFFFF;
+}
+
+/* Ebook Reader Image & Media Stabilization */
+.libriaudio-reader-img,
+article.prose img,
+article.prose svg,
+article.prose figure {
+  max-width: 100% !important;
+  height: auto !important;
+  display: block;
+  margin: 1.75rem auto;
+  border-radius: 0.75rem;
+  object-fit: contain;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  transition: opacity 0.3s ease;
+  contain: paint;
+}
+
+article.prose svg {
+  max-height: 80vh;
+}
+
+article.prose figure img {
+  margin: 0 auto;
+  box-shadow: none;
+}
+
+article.prose figcaption {
+  font-size: 0.8rem;
+  opacity: 0.75;
+  text-align: center;
+  margin-top: 0.5rem;
+  font-style: italic;
+}
+
+.libriaudio-img-error {
+  display: none !important;
+}

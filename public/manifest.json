@@ -1,0 +1,25 @@
+{
+  "name": "LibriAudio — Audiobooks & EPUB Reader",
+  "short_name": "LibriAudio",
+  "description": "Public domain audiobooks player and EPUB reader",
+  "start_url": "/",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "window-controls-overlay", "standalone"],
+  "background_color": "#070707",
+  "theme_color": "#C5A059",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

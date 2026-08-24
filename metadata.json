@@ -1,0 +1,6 @@
+{
+  "name": "LibriAudio",
+  "description": "A production-grade mobile audiobook application with LibriVox streaming, Gutenberg synced Ebook Reader, IndexedDB offline caching, Sleep Timer with gentle fadeout, Voice Enhancer EQ presets, timestamped Bookmarks, and Car Driving Mode.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
