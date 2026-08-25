@@ -392,37 +392,52 @@ export async function getOfflineAudioTrackUrl(
 }
 
 /**
- * Helper to fetch audio blob with direct CORS first, then server proxy fallback
+ * Helper to fetch audio blob with retry logic and CORS fallback
  */
-async function fetchAudioBlob(audioUrl: string): Promise<Blob> {
-  let response: Response | null = null;
+async function fetchAudioBlob(audioUrl: string, maxRetries = 2): Promise<Blob> {
+  let lastError: Error | null = null;
 
-  // 1. Direct fetch
-  try {
-    response = await fetch(audioUrl, { mode: 'cors' });
-  } catch {
-    response = null;
-  }
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    let response: Response | null = null;
 
-  // 2. If direct fetch fails (CORS, network), use backend proxy
-  if (!response || !response.ok) {
+    // 1. Try CORS fetch
     try {
-      response = await fetch(`/api/proxy-audio?url=${encodeURIComponent(audioUrl)}`);
-    } catch {
+      response = await fetch(audioUrl, {
+        mode: 'cors',
+        signal: AbortSignal.timeout(30000),
+      });
+    } catch (err) {
       response = null;
+      lastError = err instanceof Error ? err : new Error(String(err));
+    }
+
+    // 2. If CORS fails, try no-cors (limited but may work for some endpoints)
+    if (!response || !response.ok) {
+      try {
+        response = await fetch(audioUrl, {
+          signal: AbortSignal.timeout(30000),
+        });
+      } catch (err) {
+        response = null;
+        lastError = err instanceof Error ? err : new Error(String(err));
+      }
+    }
+
+    if (response && response.ok) {
+      const blob = await response.blob();
+      if (blob && blob.size >= 512) {
+        return blob;
+      }
+      lastError = new Error('Downloaded audio stream was empty or truncated');
+    }
+
+    // Wait before retry (exponential backoff)
+    if (attempt < maxRetries) {
+      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
     }
   }
 
-  if (!response || !response.ok) {
-    throw new Error(`Failed to download audio track from ${audioUrl}`);
-  }
-
-  const blob = await response.blob();
-  if (!blob || blob.size < 512) {
-    throw new Error('Downloaded audio stream was empty or truncated');
-  }
-
-  return blob;
+  throw lastError || new Error(`Failed to download audio track from ${audioUrl}`);
 }
 
 /**
@@ -502,34 +517,58 @@ export async function downloadAudiobook(
   for (let i = 0; i < totalSelected; i++) {
     const track = tracksToDownload[i];
     const trackKey = `${activeBook.id}_${track.id}`;
+    let trackSuccess = false;
 
-    try {
-      if (onProgress) {
-        onProgress(Math.round((i / totalSelected) * 100), totalBytes, track.title);
+    // Per-track retry (up to 2 attempts)
+    for (let attempt = 0; attempt < 2 && !trackSuccess; attempt++) {
+      try {
+        if (onProgress) {
+          onProgress(Math.round((i / totalSelected) * 100), totalBytes, track.title);
+        }
+
+        const blob = await fetchAudioBlob(track.audioUrl);
+        totalBytes += blob.size;
+
+        // Store track binary in IndexedDB with quota error handling
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(STORE_TRACKS, 'readwrite');
+            tx.objectStore(STORE_TRACKS).put({
+              trackKey,
+              bookId: activeBook.id,
+              trackId: track.id,
+              trackNumber: track.trackNumber || i + 1,
+              title: track.title,
+              durationSeconds: track.durationSeconds,
+              blob,
+              sizeBytes: blob.size,
+              savedAt: Date.now(),
+            });
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+          });
+          trackSuccess = true;
+          successfulTracks++;
+        } catch (storageErr) {
+          // Quota exceeded — stop downloading more tracks
+          if (storageErr instanceof DOMException && storageErr.name === 'QuotaExceededError') {
+            console.warn('Storage quota exceeded, stopping download');
+            i = totalSelected; // break outer loop
+            break;
+          }
+          throw storageErr;
+        }
+      } catch (err) {
+        if (attempt === 0) {
+          // Wait before retry
+          await new Promise((r) => setTimeout(r, 1500));
+        } else {
+          console.warn(`Failed to download track ${track.title} (${track.id}) after retries:`, err);
+        }
       }
+    }
 
-      const blob = await fetchAudioBlob(track.audioUrl);
-      totalBytes += blob.size;
-
-      // Store track binary in IndexedDB
-      await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(STORE_TRACKS, 'readwrite');
-        tx.objectStore(STORE_TRACKS).put({
-          trackKey,
-          bookId: activeBook.id,
-          trackId: track.id,
-          trackNumber: track.trackNumber || i + 1,
-          title: track.title,
-          durationSeconds: track.durationSeconds,
-          blob,
-          sizeBytes: blob.size,
-          savedAt: Date.now(),
-        });
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
-
-      successfulTracks++;
+    if (trackSuccess) {
       const currentProgress = Math.round(((i + 1) / totalSelected) * 100);
       if (onProgress) {
         onProgress(currentProgress, totalBytes, track.title);
@@ -545,7 +584,7 @@ export async function downloadAudiobook(
           i === totalSelected - 1
             ? totalSelected >= allTracks.length
               ? 'ready'
-              : ('partial' as any)
+              : 'partial'
             : 'downloading',
         progress: currentProgress,
       };
@@ -556,15 +595,13 @@ export async function downloadAudiobook(
         tx.oncomplete = () => resolve();
         tx.onerror = () => resolve();
       });
-    } catch (err) {
-      console.warn(`Failed to download track ${track.title} (${track.id}):`, err);
     }
   }
 
   // Finalize as ready, partial, or error
   const isFull = successfulTracks >= allTracks.length && allTracks.length > 0;
   const isPartial = successfulTracks > 0 && !isFull;
-  const finalStatus = isFull ? 'ready' : isPartial ? ('partial' as any) : 'error';
+  const finalStatus = isFull ? 'ready' : isPartial ? 'partial' : 'error';
 
   const finalRecord: OfflineBookData = {
     bookId: activeBook.id,

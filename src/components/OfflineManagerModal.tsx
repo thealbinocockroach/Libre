@@ -7,7 +7,7 @@ import {
   getTotalOfflineStorageUsed,
   formatBytes,
 } from '../utils/offlineStorage';
-import { Download, Trash2, HardDrive, Wifi, WifiOff, CheckCircle2, RefreshCw, X, Play, BookOpen, AlertCircle } from 'lucide-react';
+import { Download, Trash2, HardDrive, Wifi, WifiOff, CheckCircle2, RefreshCw, X, Play, BookOpen, AlertCircle, PauseCircle } from 'lucide-react';
 
 interface OfflineManagerModalProps {
   isOpen: boolean;
@@ -36,6 +36,8 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
   const [downloadingBookId, setDownloadingBookId] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState<number>(0);
 
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
   const loadData = async () => {
     const list = await getDownloadedBooks();
     setDownloadedList(list);
@@ -54,13 +56,18 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
   const handleDownload = async (book: Audiobook) => {
     setDownloadingBookId(book.id);
     setDownloadProgress(0);
+    setDownloadError(null);
     try {
-      await downloadAudiobook(book, (percent) => {
-        setDownloadProgress(percent);
+      await downloadAudiobook(book, {
+        onProgress: (percent) => {
+          setDownloadProgress(percent);
+        },
       });
       await loadData();
     } catch (e) {
       console.warn('Download failed:', e);
+      setDownloadError(e instanceof Error ? e.message : 'Download failed');
+      setTimeout(() => setDownloadError(null), 4000);
     } finally {
       setDownloadingBookId(null);
       setDownloadProgress(0);
@@ -150,12 +157,20 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
 
         {/* Downloaded Books Section */}
         <div className="flex-1 overflow-y-auto space-y-4 pr-1 scrollbar-thin">
+          {/* Download Error Toast */}
+          {downloadError && (
+            <div className="p-2.5 rounded-xl bg-red-900/40 border border-red-500/30 text-red-200 text-xs text-center flex items-center justify-center gap-2">
+              <AlertCircle className="w-3.5 h-3.5" />
+              <span>{downloadError}</span>
+            </div>
+          )}
+
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-wider text-white/40 mb-2">
-              Downloaded Audiobooks ({downloadedList.filter((b) => b.status === 'ready').length})
+              Downloaded Audiobooks ({downloadedList.filter((b) => b.status === 'ready' || b.status === 'partial').length})
             </div>
 
-            {downloadedList.filter((b) => b.status === 'ready').length === 0 ? (
+            {downloadedList.filter((b) => b.status === 'ready' || b.status === 'partial').length === 0 ? (
               <div className="p-6 rounded-2xl border border-dashed border-white/15 text-center text-white/40 space-y-1">
                 <Download className="w-6 h-6 mx-auto opacity-40" />
                 <p className="text-xs">No audiobooks saved offline yet.</p>
@@ -164,7 +179,7 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
             ) : (
               <div className="space-y-2">
                 {downloadedList
-                  .filter((b) => b.status === 'ready')
+                  .filter((b) => b.status === 'ready' || b.status === 'partial')
                   .map((offlineItem) => (
                     <div
                       key={offlineItem.bookId}
@@ -184,9 +199,15 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
                           <div className="flex items-center gap-2 text-[10px] text-white/40">
                             <span>{formatBytes(offlineItem.sizeBytes)}</span>
                             <span>•</span>
-                            <span className="text-emerald-400 flex items-center gap-1">
-                              <CheckCircle2 className="w-3 h-3" /> Ready
-                            </span>
+                            {offlineItem.status === 'partial' ? (
+                              <span className="text-amber-400 flex items-center gap-1">
+                                <PauseCircle className="w-3 h-3" /> Partial
+                              </span>
+                            ) : (
+                              <span className="text-emerald-400 flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3" /> Ready
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -236,10 +257,11 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
             </div>
             <div className="space-y-2">
               {catalog.map((book) => {
-                const isDownloaded = downloadedList.some((d) => d.bookId === book.id && d.status === 'ready');
+                const isFullyDownloaded = downloadedList.some((d) => d.bookId === book.id && d.status === 'ready');
+                const isPartialDownload = downloadedList.some((d) => d.bookId === book.id && d.status === 'partial');
                 const isCurrentDownloading = downloadingBookId === book.id;
 
-                if (isDownloaded) return null; // already shown above
+                if (isFullyDownloaded) return null; // already shown above
 
                 return (
                   <div
@@ -274,7 +296,7 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
                           className="px-3 py-1.5 rounded-xl bg-white/[0.06] hover:bg-[#C5A059] text-white hover:text-black border border-white/10 hover:border-[#C5A059] text-xs font-semibold flex items-center gap-1.5 transition-all"
                         >
                           <Download className="w-3.5 h-3.5" />
-                          <span>Download</span>
+                          <span>{isPartialDownload ? 'Resume' : 'Download'}</span>
                         </button>
                       )}
                     </div>

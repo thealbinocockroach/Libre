@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { PlayerState } from '../types';
 import { getOfflineAudioTrackUrl } from '../utils/offlineStorage';
 
@@ -8,6 +8,33 @@ interface AudioEngineProps {
   onEnded: () => void;
   onBuffering: (isBuffering: boolean) => void;
   onError: (err: string) => void;
+  onPlay: () => void;
+  onPause: () => void;
+  onSkipNext: () => void;
+  onSkipPrevious: () => void;
+}
+
+function isValidAudioUrl(url: string | undefined | null): boolean {
+  if (!url || typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  if (trimmed.length < 5) return false;
+  return trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('blob:');
+}
+
+/**
+ * Attempt to fetch audio as a blob and return an object URL.
+ * Used as fallback when direct <audio> playback fails (CORS, network issues).
+ */
+async function fetchAudioAsBlobUrl(audioUrl: string, signal?: AbortSignal): Promise<string | null> {
+  try {
+    const res = await fetch(audioUrl, { mode: 'cors', signal });
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    if (!blob || blob.size < 512) return null;
+    return URL.createObjectURL(blob);
+  } catch {
+    return null;
+  }
 }
 
 export const AudioEngine: React.FC<AudioEngineProps> = ({
@@ -16,6 +43,10 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
   onEnded,
   onBuffering,
   onError,
+  onPlay,
+  onPause,
+  onSkipNext,
+  onSkipPrevious,
 }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -25,11 +56,25 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
 
   const targetSeekTimeRef = useRef<number>(playerState.currentTime || 0);
   const stallTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const [usingProxy, setUsingProxy] = useState<boolean>(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const blobUrlRef = useRef<string | null>(null);
   const retryCountRef = useRef<number>(0);
+  const trackRef = useRef(playerState.currentTrack);
+  const bookRef = useRef(playerState.currentBook);
+
+  // Keep refs fresh for closure-safe callbacks
+  trackRef.current = playerState.currentTrack;
+  bookRef.current = playerState.currentBook;
+
+  const cleanupBlobUrl = useCallback(() => {
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
+  }, []);
 
   // Initialize Web Audio graph lazily on first user interaction safely
-  const initAudioGraph = () => {
+  const initAudioGraph = useCallback(() => {
     if (audioCtxRef.current || !audioRef.current) return;
     try {
       const AudioCtx =
@@ -52,7 +97,7 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
     } catch {
       // If Web Audio routing is restricted (CORS or permissions), native audio element is used directly
     }
-  };
+  }, []);
 
   // Sync audio source when track or book changes
   useEffect(() => {
@@ -61,10 +106,21 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
 
     const track = playerState.currentTrack;
     const book = playerState.currentBook;
-    if (!track) return;
+    if (!track || !track.audioUrl) return;
+
+    // Validate URL before using
+    if (!isValidAudioUrl(track.audioUrl)) {
+      onError(`Invalid audio URL for "${track.title}". Skipping.`);
+      return;
+    }
 
     let isSubscribed = true;
-    let createdOfflineUrl: string | null = null;
+
+    // Cancel any in-flight blob fetch
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+    cleanupBlobUrl();
 
     async function loadAudioSource() {
       let finalUrl = track!.audioUrl;
@@ -75,7 +131,7 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
           const offlineUrl = await getOfflineAudioTrackUrl(book.id, track!.id, track!.trackNumber);
           if (offlineUrl && isSubscribed) {
             finalUrl = offlineUrl;
-            createdOfflineUrl = offlineUrl;
+            blobUrlRef.current = offlineUrl;
           } else if (offlineUrl) {
             URL.revokeObjectURL(offlineUrl);
           }
@@ -85,11 +141,6 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
       }
 
       if (!isSubscribed) return;
-
-      // If we previously switched to proxy and track changed, reset proxy state
-      if (!createdOfflineUrl && usingProxy && !finalUrl.startsWith('/api/proxy-audio')) {
-        finalUrl = `/api/proxy-audio?url=${encodeURIComponent(track!.audioUrl)}`;
-      }
 
       // Check if URL is different
       const currentSrc = audio!.currentSrc || audio!.src;
@@ -106,7 +157,7 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
         if (playerState.isPlaying) {
           initAudioGraph();
           audio!.play().catch(() => {
-            // Autoplay permissions
+            // Autoplay permissions — user interaction needed
           });
         }
       }
@@ -116,15 +167,14 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
 
     return () => {
       isSubscribed = false;
-      if (createdOfflineUrl) {
-        URL.revokeObjectURL(createdOfflineUrl);
-      }
     };
   }, [
     playerState.currentTrack?.id,
     playerState.currentBook?.id,
     playerState.currentTrack?.audioUrl,
-    usingProxy,
+    initAudioGraph,
+    cleanupBlobUrl,
+    onError,
   ]);
 
   // Handle Play/Pause
@@ -137,13 +187,11 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
       if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
         audioCtxRef.current.resume().catch(() => {});
       }
-      audio.play().catch(() => {
-        // Handled
-      });
+      audio.play().catch(() => {});
     } else {
       audio.pause();
     }
-  }, [playerState.isPlaying]);
+  }, [playerState.isPlaying, initAudioGraph]);
 
   // Sync Equalizer / Voice Enhancer filter preset
   useEffect(() => {
@@ -221,45 +269,51 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
     const audio = audioRef.current;
     if (!audio || !audio.src) return;
 
-    // If audio is ready, check difference and seek
     if (audio.readyState >= 1) {
       if (Math.abs(audio.currentTime - playerState.currentTime) > 2) {
         audio.currentTime = playerState.currentTime;
       }
     } else {
-      // Store target seek time until metadata is loaded
       targetSeekTimeRef.current = playerState.currentTime;
     }
   }, [playerState.currentTime]);
 
   // Smart recovery when audio stalls or buffers excessively due to network
-  const handleStalledOrWaiting = () => {
+  const handleStalledOrWaiting = useCallback(() => {
     onBuffering(true);
 
     if (stallTimerRef.current) {
       clearTimeout(stallTimerRef.current);
     }
 
-    // If buffering takes longer than 3.5 seconds, auto-switch to backend proxy stream
-    stallTimerRef.current = setTimeout(() => {
+    // If buffering takes longer than 4 seconds, try blob fetch fallback (works in Capacitor)
+    stallTimerRef.current = setTimeout(async () => {
       const audio = audioRef.current;
-      const track = playerState.currentTrack;
+      const track = trackRef.current;
       if (!audio || !track) return;
 
-      if (!usingProxy && track.audioUrl.startsWith('http')) {
-        console.info('Switching audio stream to high-speed proxy buffer...');
+      if (!isValidAudioUrl(track.audioUrl)) return;
+
+      // Try fetching as blob URL (works in Capacitor WebView without CORS proxy)
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      const blobUrl = await fetchAudioAsBlobUrl(track.audioUrl, controller.signal);
+      if (blobUrl && audioRef.current) {
         targetSeekTimeRef.current = audio.currentTime || playerState.currentTime;
-        setUsingProxy(true);
-        audio.src = `/api/proxy-audio?url=${encodeURIComponent(track.audioUrl)}`;
+        cleanupBlobUrl();
+        blobUrlRef.current = blobUrl;
+        audio.src = blobUrl;
         audio.load();
         if (playerState.isPlaying) {
           audio.play().catch(() => {});
         }
       }
-    }, 3500);
-  };
+    }, 4000);
+  }, [onBuffering, playerState.currentTime, playerState.isPlaying, cleanupBlobUrl]);
 
-  const handleCanPlay = () => {
+  const handleCanPlay = useCallback(() => {
     onBuffering(false);
     if (stallTimerRef.current) {
       clearTimeout(stallTimerRef.current);
@@ -272,40 +326,148 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
     // Apply pending seek position once stream is ready
     if (targetSeekTimeRef.current > 0) {
       try {
-        if (audio.duration && targetSeekTimeRef.current < audio.duration) {
-          audio.currentTime = targetSeekTimeRef.current;
-        } else {
-          audio.currentTime = targetSeekTimeRef.current;
-        }
+        audio.currentTime = targetSeekTimeRef.current;
       } catch {
         // ignore
       }
       targetSeekTimeRef.current = 0;
     }
-  };
+  }, [onBuffering]);
 
-  const handleAudioError = () => {
+  const handleAudioError = useCallback(async () => {
     onBuffering(false);
-    const track = playerState.currentTrack;
+    const track = trackRef.current;
     const audio = audioRef.current;
 
-    // Try proxy fallback on error
-    if (!usingProxy && track && track.audioUrl.startsWith('http') && retryCountRef.current < 2) {
+    // Retry up to 2 times with blob fetch fallback
+    if (track && isValidAudioUrl(track.audioUrl) && retryCountRef.current < 2) {
       retryCountRef.current += 1;
       targetSeekTimeRef.current = audio?.currentTime || playerState.currentTime;
-      setUsingProxy(true);
-      if (audio) {
-        audio.src = `/api/proxy-audio?url=${encodeURIComponent(track.audioUrl)}`;
-        audio.load();
+
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      const blobUrl = await fetchAudioAsBlobUrl(track.audioUrl, controller.signal);
+      if (blobUrl && audioRef.current) {
+        cleanupBlobUrl();
+        blobUrlRef.current = blobUrl;
+        audioRef.current.src = blobUrl;
+        audioRef.current.load();
         if (playerState.isPlaying) {
-          audio.play().catch(() => {});
+          audioRef.current.play().catch(() => {});
         }
+        return;
       }
-      return;
     }
 
-    onError('Audio stream buffering failed. Check network or tap Retry.');
-  };
+    const trackTitle = track?.title || 'Unknown';
+    onError(`Playback failed for "${trackTitle}". Check your connection and try again.`);
+  }, [onBuffering, onError, playerState.currentTime, playerState.isPlaying, cleanupBlobUrl]);
+
+  // --- Media Session API: system notifications & lock-screen controls ---
+  useEffect(() => {
+    const book = playerState.currentBook;
+    const track = playerState.currentTrack;
+    if (!('mediaSession' in navigator) || !book) return;
+
+    const ms = navigator.mediaSession;
+
+    // Set metadata (shows in Android notification & lock screen)
+    const artworkSrc = book.coverImageUrl || '';
+    const artwork: MediaImage[] = artworkSrc
+      ? [
+          { src: artworkSrc, sizes: '512x512', type: 'image/jpeg' },
+          { src: artworkSrc, sizes: '256x256', type: 'image/jpeg' },
+          { src: artworkSrc, sizes: '128x128', type: 'image/jpeg' },
+        ]
+      : [];
+
+    ms.metadata = new MediaMetadata({
+      title: track?.title || book.title,
+      artist: book.author || 'Unknown Author',
+      album: book.title,
+      artwork,
+    });
+
+    // Register playback action handlers (lock-screen / notification buttons)
+    ms.setActionHandler('play', () => onPlay());
+    ms.setActionHandler('pause', () => onPause());
+    ms.setActionHandler('nexttrack', () => onSkipNext());
+    ms.setActionHandler('previoustrack', () => onSkipPrevious());
+    ms.setActionHandler('seekbackward', (details) => {
+      const offset = details.seekOffset || 15;
+      const audio = audioRef.current;
+      if (audio) {
+        audio.currentTime = Math.max(0, audio.currentTime - offset);
+      }
+    });
+    ms.setActionHandler('seekforward', (details) => {
+      const offset = details.seekOffset || 30;
+      const audio = audioRef.current;
+      if (audio) {
+        audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + offset);
+      }
+    });
+    ms.setActionHandler('seekto', (details) => {
+      const audio = audioRef.current;
+      if (audio && details.fastSeek && 'fastSeek' in audio) {
+        audio.fastSeek(details.seekTime ?? 0);
+      } else if (audio && details.seekTime != null) {
+        audio.currentTime = details.seekTime;
+      }
+    });
+
+    return () => {
+      ms.metadata = null;
+      for (const action of ['play', 'pause', 'nexttrack', 'previoustrack', 'seekbackward', 'seekforward', 'seekto'] as const) {
+        try { ms.setActionHandler(action, null); } catch {}
+      }
+    };
+  }, [playerState.currentBook?.id, playerState.currentTrack?.id, onPlay, onPause, onSkipNext, onSkipPrevious]);
+
+  // Sync Media Session playback state (playing/paused + position)
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+    const ms = navigator.mediaSession;
+    ms.playbackState = playerState.isPlaying ? 'playing' : 'paused';
+  }, [playerState.isPlaying]);
+
+  // Periodically update Media Session position so lock-screen scrubber stays current
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const updatePosition = () => {
+      if (navigator.mediaSession.setPositionState) {
+        try {
+          const duration = isFinite(audio.duration) ? audio.duration : playerState.duration || 0;
+          const position = isFinite(audio.currentTime) ? audio.currentTime : playerState.currentTime || 0;
+          navigator.mediaSession.setPositionState({
+            duration: Math.max(0, duration),
+            playbackRate: playerState.playbackSpeed || 1,
+            position: Math.max(0, Math.min(position, duration)),
+          });
+        } catch {}
+      }
+    };
+
+    // Update immediately, then every 3 seconds while playing
+    updatePosition();
+    if (!playerState.isPlaying) return;
+    const interval = setInterval(updatePosition, 3000);
+    return () => clearInterval(interval);
+  }, [playerState.isPlaying, playerState.currentTime, playerState.duration, playerState.playbackSpeed]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      cleanupBlobUrl();
+      if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
+    };
+  }, [cleanupBlobUrl]);
 
   return (
     <audio
@@ -313,6 +475,7 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
       id="libriaudio-core-audio-element"
       className="hidden"
       preload="auto"
+      crossOrigin="anonymous"
       onTimeUpdate={() => {
         if (audioRef.current) {
           onTimeUpdate(audioRef.current.currentTime, audioRef.current.duration || 0);

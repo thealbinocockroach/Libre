@@ -19,6 +19,7 @@ export interface ThemeDefinition {
     accent: string;
     accentHover: string;
     accentDim: string;
+    accentRgb: string;
     textMain: string;
     textDim: string;
     border: string;
@@ -39,6 +40,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
       accent: '#C5A059',
       accentHover: '#d4af65',
       accentDim: 'rgba(197, 160, 89, 0.15)',
+      accentRgb: '197, 160, 89',
       textMain: '#EFEFEF',
       textDim: '#888888',
       border: 'rgba(255, 255, 255, 0.08)',
@@ -57,6 +59,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
       accent: '#E5A93C',
       accentHover: '#f5ba4f',
       accentDim: 'rgba(229, 169, 60, 0.15)',
+      accentRgb: '229, 169, 60',
       textMain: '#F5F5F5',
       textDim: '#7A7A7A',
       border: 'rgba(255, 255, 255, 0.06)',
@@ -75,6 +78,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
       accent: '#D49B50',
       accentHover: '#e0aa64',
       accentDim: 'rgba(212, 155, 80, 0.15)',
+      accentRgb: '212, 155, 80',
       textMain: '#EADBCA',
       textDim: '#A89988',
       border: 'rgba(212, 155, 80, 0.12)',
@@ -93,6 +97,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
       accent: '#4EBA88',
       accentHover: '#62cfa0',
       accentDim: 'rgba(78, 186, 136, 0.15)',
+      accentRgb: '78, 186, 136',
       textMain: '#E2EFEA',
       textDim: '#7D9E93',
       border: 'rgba(78, 186, 136, 0.12)',
@@ -111,6 +116,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
       accent: '#E07A5F',
       accentHover: '#e88e76',
       accentDim: 'rgba(224, 122, 95, 0.15)',
+      accentRgb: '224, 122, 95',
       textMain: '#F2EAE9',
       textDim: '#A08892',
       border: 'rgba(224, 122, 95, 0.12)',
@@ -129,6 +135,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
       accent: '#8C6016',
       accentHover: '#734e0e',
       accentDim: 'rgba(140, 96, 22, 0.15)',
+      accentRgb: '140, 96, 22',
       textMain: '#1A1713',
       textDim: '#5C5449',
       border: 'rgba(0, 0, 0, 0.1)',
@@ -147,6 +154,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
       accent: '#C5A059',
       accentHover: '#d4af65',
       accentDim: 'rgba(197, 160, 89, 0.15)',
+      accentRgb: '197, 160, 89',
       textMain: '#EFEFEF',
       textDim: '#888888',
       border: 'rgba(255, 255, 255, 0.08)',
@@ -190,6 +198,7 @@ export function applyThemeToDOM(themeId: ThemeId): ThemeDefinition {
   root.style.setProperty('--accent', themeDef.colors.accent);
   root.style.setProperty('--accent-hover', themeDef.colors.accentHover);
   root.style.setProperty('--accent-dim', themeDef.colors.accentDim);
+  root.style.setProperty('--accent-rgb', themeDef.colors.accentRgb);
   root.style.setProperty('--text-main', themeDef.colors.textMain);
   root.style.setProperty('--text-dim', themeDef.colors.textDim);
   root.style.setProperty('--border-subtle', themeDef.colors.border);

@@ -142,7 +142,7 @@ export interface OfflineBookData {
   book: Audiobook;
   sizeBytes: number;
   downloadedAt: number;
-  status: 'downloading' | 'ready' | 'error';
+  status: 'downloading' | 'partial' | 'ready' | 'error';
   progress: number; // 0 to 100
 }
 

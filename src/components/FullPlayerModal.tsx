@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PlayerState, Audiobook, AudioTrack } from '../types';
 import {
   ChevronDown,
@@ -9,6 +9,7 @@ import {
   RotateCcw,
   RotateCw,
   SkipForward,
+  SkipBack,
   Volume2,
   VolumeX,
   X,
@@ -49,7 +50,7 @@ interface FullPlayerModalProps {
   onRewind15: () => void;
   onForward30: () => void;
   onSkipNext: () => void;
-  onSetSpeed: (speed: number) => void;
+  onSkipPrevious: () => void;
   onSelectTrack: (trackIndex: number) => void;
   onToggleSaveBook: (book: Audiobook) => void;
   isSaved: boolean;
@@ -70,7 +71,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
   onRewind15,
   onForward30,
   onSkipNext,
-  onSetSpeed,
+  onSkipPrevious,
   onSelectTrack,
   onToggleSaveBook,
   isSaved,
@@ -174,12 +175,88 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
   const currentDuration = duration > 0 ? duration : currentTrack?.durationSeconds || currentBook.totalTimeSecs;
 
-  const speedOptions = [1.0, 1.25, 1.5, 1.75, 2.0];
-  const nextSpeed = () => {
-    const currentIndex = speedOptions.indexOf(playbackSpeed);
-    const nextIdx = (currentIndex + 1) % speedOptions.length;
-    onSetSpeed(speedOptions[nextIdx]);
-  };
+  // --- Drag-scrub state for smooth progress bar interaction ---
+  const progressBarRef = useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragPercent, setDragPercent] = useState<number | null>(null);
+  const dragPercentRef = useRef<number>(0);
+
+  const getTimeFromPosition = useCallback((clientX: number): number => {
+    const bar = progressBarRef.current;
+    if (!bar) return 0;
+    const rect = bar.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const percent = Math.max(0, Math.min(1, x / rect.width));
+    return percent * currentDuration;
+  }, [currentDuration]);
+
+  const getPercentFromPosition = useCallback((clientX: number): number => {
+    const bar = progressBarRef.current;
+    if (!bar) return 0;
+    const rect = bar.getBoundingClientRect();
+    const x = clientX - rect.left;
+    return Math.max(0, Math.min(1, x / rect.width)) * 100;
+  }, []);
+
+  const handleDragStart = useCallback((clientX: number) => {
+    setIsDragging(true);
+    const pct = getPercentFromPosition(clientX);
+    dragPercentRef.current = pct;
+    setDragPercent(pct);
+  }, [getPercentFromPosition]);
+
+  const handleDragMove = useCallback((clientX: number) => {
+    if (!isDragging) return;
+    const pct = getPercentFromPosition(clientX);
+    dragPercentRef.current = pct;
+    setDragPercent(pct);
+  }, [isDragging, getPercentFromPosition]);
+
+  const handleDragEnd = useCallback(() => {
+    if (!isDragging) return;
+    setIsDragging(false);
+    const seekTime = (dragPercentRef.current / 100) * currentDuration;
+    setDragPercent(null);
+    onSeek(seekTime);
+  }, [isDragging, currentDuration, onSeek]);
+
+  // Mouse event handlers
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    handleDragStart(e.clientX);
+  }, [handleDragStart]);
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const onMouseMove = (e: MouseEvent) => handleDragMove(e.clientX);
+    const onMouseUp = () => handleDragEnd();
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [isDragging, handleDragMove, handleDragEnd]);
+
+  // Touch event handlers
+  const onTouchStart = useCallback((e: React.TouchEvent) => {
+    handleDragStart(e.touches[0].clientX);
+  }, [handleDragStart]);
+
+  const onTouchMove = useCallback((e: React.TouchEvent) => {
+    handleDragMove(e.touches[0].clientX);
+  }, [handleDragMove]);
+
+  const onTouchEnd = useCallback(() => {
+    handleDragEnd();
+  }, [handleDragEnd]);
+
+  // The displayed percent — live drag position or actual playback position
+  const displayPercent = isDragging && dragPercent !== null
+    ? dragPercent
+    : (currentTime / currentDuration) * 100;
 
   // Download all or remaining chapters
   const handleDownloadRemaining = async () => {
@@ -333,11 +410,17 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
           {/* Playback Scrubbing & Controls */}
           <div id="player-controls-container" className="relative space-y-3.5 z-10">
-            {/* Timeline Slider */}
+            {/* Timeline Slider — smooth drag-scrub */}
             <div className="space-y-1.5">
               <div
-                className="w-full h-1.5 bg-white/10 hover:bg-white/20 rounded-full cursor-pointer relative transition-all group"
+                ref={progressBarRef}
+                className="w-full h-2 bg-white/10 rounded-full cursor-pointer relative transition-all group"
+                onMouseDown={onMouseDown}
+                onTouchStart={onTouchStart}
+                onTouchMove={onTouchMove}
+                onTouchEnd={onTouchEnd}
                 onClick={(e) => {
+                  if (isDragging) return;
                   const rect = e.currentTarget.getBoundingClientRect();
                   const x = e.clientX - rect.left;
                   const percent = Math.max(0, Math.min(1, x / rect.width));
@@ -347,30 +430,30 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                 {/* Played portion */}
                 <div
                   className="absolute top-0 left-0 h-full bg-[#C5A059] rounded-full"
-                  style={{ width: `${(currentTime / currentDuration) * 100}%` }}
+                  style={{ width: `${Math.max(0, Math.min(100, displayPercent))}%` }}
                 />
-                {/* Indicator */}
+                {/* Thumb indicator */}
                 <div
-                  className="absolute top-1/2 w-3 h-3 bg-white group-hover:scale-125 rounded-full shadow-lg transition-transform"
-                  style={{ left: `${(currentTime / currentDuration) * 100}%`, transform: 'translate(-50%, -50%)' }}
+                  className={`absolute top-1/2 rounded-full shadow-lg bg-white transition-transform ${isDragging ? 'w-4 h-4 scale-150' : 'w-3 h-3 group-hover:scale-125'}`}
+                  style={{ left: `${Math.max(0, Math.min(100, displayPercent))}%`, transform: 'translate(-50%, -50%)' }}
                 />
               </div>
               <div className="flex justify-between text-[10px] tracking-wider font-mono text-[#C5A059]/90 px-0.5">
-                <span>{formatTime(currentTime)}</span>
+                <span>{formatTime(isDragging && dragPercent !== null ? (dragPercent / 100) * currentDuration : currentTime)}</span>
                 <span>{formatTime(currentDuration)}</span>
               </div>
             </div>
 
             {/* Control Buttons Row */}
-            <div className="flex items-center justify-between px-3 sm:px-6">
-              {/* Speed Toggle */}
+            <div className="flex items-center justify-between px-2 sm:px-4">
+              {/* Previous Track */}
               <button
-                id="btn-playback-speed"
-                onClick={nextSpeed}
-                className="px-2.5 py-1.5 rounded-xl bg-white/[0.04] border border-white/10 hover:border-[#C5A059]/50 hover:bg-[#C5A059]/10 text-[#C5A059] text-[10px] uppercase tracking-widest font-semibold transition-all cursor-pointer"
-                title="Change Playback Speed"
+                id="btn-player-skip-prev"
+                onClick={onSkipPrevious}
+                className="p-3 rounded-full bg-white/[0.04] hover:bg-white/[0.08] text-white/70 hover:text-white border border-white/5 hover:border-white/15 transition-all active:scale-95 cursor-pointer"
+                title="Previous Track"
               >
-                {playbackSpeed}x
+                <SkipBack className="w-4 h-4" />
               </button>
 
               {/* Rewind 15s */}

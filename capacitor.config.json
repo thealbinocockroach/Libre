@@ -1,0 +1,14 @@
+{
+  "appId": "com.libriaudio.app",
+  "appName": "LibriAudio",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_launcher",
+      "iconColor": "#C5A059"
+    }
+  }
+}

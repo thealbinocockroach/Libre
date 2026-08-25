@@ -25,6 +25,8 @@ import {
   applyQualityToAudiobook,
   getSavedQualityPreference,
 } from './utils/audioQualityManager';
+import { saveAudiobookPosition, getAudiobookPosition } from './utils/audioPositionTracker';
+import { recordTrueListeningTime, recordReadingSession } from './utils/activityTracker';
 
 import {
   Compass,
@@ -68,31 +70,45 @@ export default function App() {
           history: parsed.history || [],
           savedBooks: parsed.savedBooks || [],
           bookmarks: parsed.bookmarks || [],
+          currentBook: parsed.currentBook || null,
+          currentTrackIndex: parsed.currentTrackIndex || 0,
+          playbackSpeed: parsed.playbackSpeed || 1.0,
         };
       }
     } catch (e) {}
     return {
-      history: [INITIAL_AUDIOBOOKS[0]],
-      savedBooks: [INITIAL_AUDIOBOOKS[1]],
+      history: [],
+      savedBooks: [],
       bookmarks: [],
+      currentBook: null,
+      currentTrackIndex: 0,
+      playbackSpeed: 1.0,
     };
   };
 
   const loadedInitialState = loadState();
 
+  // Restore last-played book and position from localStorage
+  const restoredBook = loadedInitialState.currentBook || loadedInitialState.history[0] || INITIAL_AUDIOBOOKS[0];
+  const restoredTrackIndex = loadedInitialState.currentTrackIndex || 0;
+  const savedPosition = restoredBook ? getAudiobookPosition(restoredBook.id) : null;
+  const restoredTime = savedPosition?.currentTime || 0;
+  const restoredTrackIdx = savedPosition?.trackIndex ?? restoredTrackIndex;
+  const configuredBook = applyQualityToAudiobook(restoredBook);
+
   // Player State
   const [playerState, setPlayerState] = useState<PlayerState>({
-    currentBook: loadedInitialState.history.length > 0 ? loadedInitialState.history[0] : INITIAL_AUDIOBOOKS[0],
-    currentTrack: loadedInitialState.history.length > 0 ? loadedInitialState.history[0].tracks[0] : INITIAL_AUDIOBOOKS[0].tracks[0] || null,
-    currentTrackIndex: 0,
+    currentBook: configuredBook,
+    currentTrack: configuredBook.tracks[restoredTrackIdx] || configuredBook.tracks[0] || null,
+    currentTrackIndex: restoredTrackIdx,
     isPlaying: false,
     isBuffering: false,
-    currentTime: 0,
-    duration: loadedInitialState.history.length > 0 ? (loadedInitialState.history[0].tracks[0]?.durationSeconds || loadedInitialState.history[0].totalTimeSecs || 1800) : (INITIAL_AUDIOBOOKS[0].tracks[0]?.durationSeconds || INITIAL_AUDIOBOOKS[0].totalTimeSecs || 1800),
-    playbackSpeed: 1.0,
-    volume: 1.0,
-    isMuted: false,
-    history: loadedInitialState.history,
+    currentTime: restoredTime,
+    duration: (configuredBook.tracks[restoredTrackIdx] || configuredBook.tracks[0])?.durationSeconds || configuredBook.totalTimeSecs || 1800,
+    playbackSpeed: loadedInitialState.playbackSpeed || 1.0,
+    volume: parseFloat(localStorage.getItem('libriaudio_volume') || '1'),
+    isMuted: localStorage.getItem('libriaudio_muted') === 'true',
+    history: loadedInitialState.history.length > 0 ? loadedInitialState.history : [configuredBook],
     savedBooks: loadedInitialState.savedBooks,
     bookmarks: loadedInitialState.bookmarks,
     sleepTimer: {
@@ -105,6 +121,14 @@ export default function App() {
     voiceEnhancer: (localStorage.getItem('libriaudio_eq_preset') as VoiceEnhancerPreset) || 'off',
     isOfflineOnly: false,
   });
+
+  // Audio playback error state
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
+
+  // Audio listening session tracking refs
+  const audioSessionStartRef = useRef<number>(Date.now());
+  const audioLastTimeRef = useRef<number>(0);
+  const audioSessionSecondsRef = useRef<number>(0);
 
   // Initialize Theme on First User Interaction
   useEffect(() => {
@@ -139,6 +163,46 @@ export default function App() {
   }, []);
 
 
+  // Android back button handler — close modals, navigate tabs, exit last
+  useEffect(() => {
+    let cleanup: (() => void) | undefined;
+
+    const setupBackButton = async () => {
+      try {
+        const { App } = await import('@capacitor/app');
+        const listener = await App.addListener('backButton', ({ canGoBack }: { canGoBack: boolean }) => {
+          if (showBookDetailModal) {
+            setShowBookDetailModal(false);
+          } else if (showOfflineManagerModal) {
+            setShowOfflineManagerModal(false);
+          } else if (showCarModeModal) {
+            setShowCarModeModal(false);
+          } else if (showBookmarksModal) {
+            setShowBookmarksModal(false);
+          } else if (showVoiceEnhancerModal) {
+            setShowVoiceEnhancerModal(false);
+          } else if (showSleepTimerModal) {
+            setShowSleepTimerModal(false);
+          } else if (showEbookReader) {
+            setShowEbookReader(false);
+          } else if (showFullPlayer) {
+            setShowFullPlayer(false);
+          } else if (activeTab !== 'explore') {
+            setActiveTab('explore');
+          } else {
+            App.exitApp();
+          }
+        });
+        cleanup = () => listener.remove();
+      } catch {
+        // Not running in Capacitor (browser dev) — ignore
+      }
+    };
+
+    setupBackButton();
+    return () => { cleanup?.(); };
+  }, [showBookDetailModal, showOfflineManagerModal, showCarModeModal, showBookmarksModal, showVoiceEnhancerModal, showSleepTimerModal, showEbookReader, showFullPlayer, activeTab]);
+
   // Save state
   useEffect(() => {
     try {
@@ -148,10 +212,26 @@ export default function App() {
           history: playerState.history.slice(0, 50),
           savedBooks: playerState.savedBooks,
           bookmarks: playerState.bookmarks,
+          currentBook: playerState.currentBook ? {
+            id: playerState.currentBook.id,
+            title: playerState.currentBook.title,
+            author: playerState.currentBook.author,
+            description: playerState.currentBook.description,
+            coverImageUrl: playerState.currentBook.coverImageUrl,
+            language: playerState.currentBook.language,
+            totalTimeSecs: playerState.currentBook.totalTimeSecs,
+            reader: playerState.currentBook.reader,
+            tracks: playerState.currentBook.tracks,
+            gutenbergId: playerState.currentBook.gutenbergId,
+          } : null,
+          currentTrackIndex: playerState.currentTrackIndex,
+          playbackSpeed: playerState.playbackSpeed,
         })
       );
+      localStorage.setItem('libriaudio_volume', playerState.volume.toString());
+      localStorage.setItem('libriaudio_muted', playerState.isMuted.toString());
     } catch (e) {}
-  }, [playerState.history, playerState.savedBooks, playerState.bookmarks]);
+  }, [playerState.history, playerState.savedBooks, playerState.bookmarks, playerState.currentBook, playerState.currentTrackIndex, playerState.playbackSpeed, playerState.volume, playerState.isMuted]);
 
   // Sync offline status
   useEffect(() => {
@@ -205,7 +285,13 @@ export default function App() {
 
   const handleSelectBook = (book: Audiobook, trackIndex = 0) => {
     const configuredBook = applyQualityToAudiobook(book);
-    const selectedTrack = configuredBook.tracks[trackIndex] || {
+
+    // Restore saved position if resuming the same book
+    const savedPos = getAudiobookPosition(book.id);
+    const resumeTrackIndex = trackIndex || savedPos?.trackIndex || 0;
+    const resumeTime = trackIndex === 0 && savedPos?.trackIndex === 0 ? (savedPos?.currentTime || 0) : (trackIndex > 0 ? 0 : (savedPos?.currentTime || 0));
+
+    const selectedTrack = configuredBook.tracks[resumeTrackIndex] || {
       id: `default_${configuredBook.id}`,
       title: `${configuredBook.title} - Complete`,
       audioUrl: configuredBook.tracks[0]?.audioUrl || '',
@@ -223,9 +309,9 @@ export default function App() {
         ...prev,
         currentBook: configuredBook,
         currentTrack: selectedTrack,
-        currentTrackIndex: trackIndex,
+        currentTrackIndex: resumeTrackIndex,
         isPlaying: true,
-        currentTime: 0,
+        currentTime: resumeTime,
         duration: selectedTrack.durationSeconds || configuredBook.totalTimeSecs || 1800,
         history: newHistory,
       };
@@ -251,8 +337,47 @@ export default function App() {
     }
   };
 
+  // Flush accumulated audio listening session to activity tracker
+  const flushAudioSession = (book?: Audiobook | null, trackIndex?: number, trackTitle?: string, currentTime?: number) => {
+    const b = book ?? playerState.currentBook;
+    const ti = trackIndex ?? playerState.currentTrackIndex;
+    const tt = trackTitle ?? playerState.currentTrack?.title;
+    const ct = currentTime ?? playerState.currentTime;
+
+    // Flush any remaining accumulated seconds
+    if (audioSessionSecondsRef.current > 0 && b) {
+      recordTrueListeningTime(b, audioSessionSecondsRef.current, ti, tt, ct);
+      audioSessionSecondsRef.current = 0;
+    }
+
+    // Record a discrete session if we listened for >= 3 seconds
+    if (b && audioSessionStartRef.current) {
+      const elapsed = (Date.now() - audioSessionStartRef.current) / 1000;
+      if (elapsed >= 3) {
+        recordReadingSession({
+          bookId: b.id,
+          bookTitle: b.title,
+          bookAuthor: b.author,
+          coverImageUrl: b.coverImageUrl,
+          chapterIndex: ti,
+          chapterTitle: tt || '',
+          durationSeconds: Math.round(elapsed),
+          startTimestamp: audioSessionStartRef.current,
+          endTimestamp: Date.now(),
+        });
+      }
+    }
+    audioSessionStartRef.current = Date.now();
+  };
+
   const handleTogglePlayPause = () => {
-    setPlayerState((prev) => ({ ...prev, isPlaying: !prev.isPlaying }));
+    setPlayerState((prev) => {
+      // Flush session when pausing
+      if (prev.isPlaying) {
+        flushAudioSession(prev.currentBook, prev.currentTrackIndex, prev.currentTrack?.title, prev.currentTime);
+      }
+      return { ...prev, isPlaying: !prev.isPlaying };
+    });
   };
 
   const handleSeek = (seconds: number) => {
@@ -275,6 +400,8 @@ export default function App() {
 
   const handleSkipNext = () => {
     if (!playerState.currentBook) return;
+    // Flush session for current track before switching
+    flushAudioSession(playerState.currentBook, playerState.currentTrackIndex, playerState.currentTrack?.title, playerState.currentTime);
     const nextIdx = playerState.currentTrackIndex + 1;
     if (nextIdx < playerState.currentBook.tracks.length) {
       handleSelectBook(playerState.currentBook, nextIdx);
@@ -285,6 +412,8 @@ export default function App() {
 
   const handleSkipPrevious = () => {
     if (!playerState.currentBook) return;
+    // Flush session for current track before switching
+    flushAudioSession(playerState.currentBook, playerState.currentTrackIndex, playerState.currentTrack?.title, playerState.currentTime);
     if (playerState.currentTime > 5 || playerState.currentTrackIndex === 0) {
       handleSeek(0);
     } else {
@@ -465,9 +594,35 @@ export default function App() {
         playerState={playerState}
         onTimeUpdate={(currentTime, duration) => {
           setPlayerState((prev) => {
-            if (prev.currentBook) {
-              localStorage.setItem(`libriaudio_pos_${prev.currentBook.id}_${prev.currentTrackIndex}`, currentTime.toString());
+            // Persist position using structured tracker (throttled by React batching)
+            if (prev.currentBook && duration > 0) {
+              saveAudiobookPosition(prev.currentBook.id, prev.currentTrackIndex, currentTime, duration);
             }
+
+            // Track listening time for stats
+            if (prev.currentBook && prev.isPlaying && duration > 0) {
+              const lastTime = audioLastTimeRef.current;
+              if (lastTime > 0 && currentTime > lastTime) {
+                const delta = currentTime - lastTime;
+                // Only count forward progress (skip ads / rebuffer resets)
+                if (delta > 0 && delta < 30) {
+                  audioSessionSecondsRef.current += delta;
+                  // Flush to activity tracker every ~8 seconds
+                  if (audioSessionSecondsRef.current >= 8) {
+                    recordTrueListeningTime(
+                      prev.currentBook,
+                      audioSessionSecondsRef.current,
+                      prev.currentTrackIndex,
+                      prev.currentTrack?.title,
+                      currentTime
+                    );
+                    audioSessionSecondsRef.current = 0;
+                  }
+                }
+              }
+              audioLastTimeRef.current = currentTime;
+            }
+
             return {
               ...prev,
               currentTime,
@@ -479,10 +634,23 @@ export default function App() {
         onBuffering={(isBuffering) => {
           setPlayerState((prev) => ({ ...prev, isBuffering }));
         }}
-        onError={() => {
+        onError={(err) => {
           setPlayerState((prev) => ({ ...prev, isBuffering: false }));
+          setPlaybackError(err);
+          setTimeout(() => setPlaybackError(null), 5000);
         }}
+        onPlay={() => setPlayerState((prev) => ({ ...prev, isPlaying: true }))}
+        onPause={() => setPlayerState((prev) => ({ ...prev, isPlaying: false }))}
+        onSkipNext={handleSkipNext}
+        onSkipPrevious={handleSkipPrevious}
       />
+
+      {/* Playback Error Toast */}
+      {playbackError && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] bg-red-900/90 text-red-100 text-sm px-4 py-2.5 rounded-xl border border-red-500/30 shadow-xl backdrop-blur-md max-w-sm text-center animate-in fade-in">
+          {playbackError}
+        </div>
+      )}
 
       {/* Top Universal App Navigation Bar */}
       <header
@@ -588,18 +756,6 @@ export default function App() {
                 e.stopPropagation();
                 handleTogglePlayPause();
               }}
-              onRewind15={(e) => {
-                e.stopPropagation();
-                handleRewind15();
-              }}
-              onOpenEbookReader={(e) => {
-                e.stopPropagation();
-                handleOpenEbookReader(playerState.currentBook || catalog[0]);
-              }}
-              onOpenSleepTimer={(e) => {
-                e.stopPropagation();
-                setShowSleepTimerModal(true);
-              }}
             />
           </div>
         </div>
@@ -693,7 +849,7 @@ export default function App() {
           onRewind15={handleRewind15}
           onForward30={handleForward30}
           onSkipNext={handleSkipNext}
-          onSetSpeed={handleSetSpeed}
+          onSkipPrevious={handleSkipPrevious}
           onSelectTrack={handleSelectTrack}
           onToggleSaveBook={handleToggleSaveBook}
           isSaved={isCurrentBookSaved}

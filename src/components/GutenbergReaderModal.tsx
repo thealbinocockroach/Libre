@@ -43,10 +43,10 @@ import {
   DictionaryResult,
   PlayerState,
 } from '../types';
-import { getEbookCloudUrl, CLASSIC_EBOOKS, findClassicEbook } from '../data/ebookData';
+import { findClassicEbook, fetchEbookContent } from '../data/ebookData';
 import { parseUploadedEpub, splitManuscriptIntoChapters } from '../utils/epubParser';
+import { cacheEbook, getCachedEbook, updateCachedPosition } from '../utils/ebookCache';
 import {
-  saveOfflineEbook,
   getOfflineEbook,
   updateEbookReadingPosition,
   formatBytes,
@@ -338,7 +338,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     };
   }, [isOpen, currentBook.id, currentChapterIndex]);
 
-  // Fetch or extract reader content (with IndexedDB offline cache priority)
+  // Fetch or extract reader content (with IndexedDB cache-first strategy)
   useEffect(() => {
     if (!isOpen) return;
     let isMounted = true;
@@ -349,7 +349,28 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
       setSelectionMenu(null);
       setActiveHighlightPopup(null);
 
-      // 1. Check IndexedDB Offline Cache first (instant offline availability)
+      // 1. Check ebook cache first (instant offline availability)
+      try {
+        const cached = await getCachedEbook(currentBook.id);
+        if (cached && cached.chapters && cached.chapters.length > 0) {
+          if (isMounted) {
+            setCurrentBook((prev) => ({ ...prev, ebookChapters: cached.chapters }));
+            const targetIndex =
+              currentChapterIndex < cached.chapters.length
+                ? currentChapterIndex
+                : 0;
+            const activeChapter = cached.chapters[targetIndex] || cached.chapters[0];
+            setHtmlContent(activeChapter.content);
+            setIsStoredOffline(true);
+            setIsLoading(false);
+          }
+          return;
+        }
+      } catch (e) {
+        console.warn('Error checking ebook cache:', e);
+      }
+
+      // 2. Check offline storage (legacy path from previous offline downloads)
       try {
         const storedEbook = await getOfflineEbook(currentBook.id);
         if (storedEbook && storedEbook.chapters && storedEbook.chapters.length > 0) {
@@ -359,11 +380,12 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
               currentChapterIndex < storedEbook.chapters.length
                 ? currentChapterIndex
                 : storedEbook.lastReadChapterIndex || 0;
-            const activeChapter =
-              storedEbook.chapters[targetIndex] || storedEbook.chapters[0];
+            const activeChapter = storedEbook.chapters[targetIndex] || storedEbook.chapters[0];
             setHtmlContent(activeChapter.content);
             setIsStoredOffline(true);
             setStoredSizeBytes(storedEbook.sizeBytes || 0);
+            // Migrate to new cache
+            cacheEbook(currentBook.id, storedEbook.fullText || '', storedEbook.chapters, 'txt', '', currentBook.gutenbergId);
             setIsLoading(false);
           }
           return;
@@ -372,58 +394,40 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
         console.warn('Error checking offline stored ebook:', e);
       }
 
-      // 2. If book has pre-parsed ebookChapters (e.g. from uploaded EPUB)
+      // 3. If book has pre-parsed ebookChapters (e.g. from uploaded EPUB)
       if (currentBook.ebookChapters && currentBook.ebookChapters.length > 0) {
         const activeChapter =
           currentBook.ebookChapters[currentChapterIndex] || currentBook.ebookChapters[0];
         if (isMounted) {
           setHtmlContent(activeChapter.content);
           setIsLoading(false);
-          // Persist to offline IndexedDB
-          saveOfflineEbook(currentBook, currentBook.ebookChapters, activeChapter.content);
+          // Cache for next time
+          cacheEbook(currentBook.id, activeChapter.content, currentBook.ebookChapters, 'epub', '', currentBook.gutenbergId);
           setIsStoredOffline(true);
         }
         return;
       }
 
-      // 3. If curated in CLASSIC_EBOOKS or fuzzy matched
-      const classic = findClassicEbook(currentBook);
-      if (classic && classic.chapters && classic.chapters.length > 0) {
-        if (isMounted) {
-          setCurrentBook((prev) => ({ ...prev, ebookChapters: classic.chapters }));
-          const activeChapter = classic.chapters[currentChapterIndex] || classic.chapters[0];
-          setHtmlContent(activeChapter.content);
-          setIsLoading(false);
-          // Persist to offline IndexedDB
-          saveOfflineEbook(currentBook, classic.chapters, activeChapter.content);
-          setIsStoredOffline(true);
-        }
-        return;
-      }
-
-      // 4. Fetch from Project Gutenberg text proxy
+      // 4. Network fetch: Gutendex API lookup + format fallback chain
       try {
-        const url = await getEbookCloudUrl(currentBook.title);
-        if (!url) {
-          throw new Error('No public digital manuscript found for this title.');
-        }
+        const classic = findClassicEbook(currentBook);
+        const gutenbergId = classic?.gutenbergId || currentBook.gutenbergId;
 
-        const res = await fetch(`/api/gutenberg/text?url=${encodeURIComponent(url)}`);
-        if (!res.ok) {
-          throw new Error('Failed to load text manuscript from archive proxy');
-        }
+        const result = await fetchEbookContent(gutenbergId, currentBook.title);
 
-        const text = await res.text();
+        if (!result) {
+          throw new Error('No public digital manuscript found for this title on Project Gutenberg. Try uploading a local EPUB or TXT file.');
+        }
 
         if (isMounted) {
-          const parsedChapters = splitManuscriptIntoChapters(text, currentBook.title);
+          const parsedChapters = splitManuscriptIntoChapters(result.text, currentBook.title);
           setCurrentBook((prev) => ({ ...prev, ebookChapters: parsedChapters }));
           const activeChapter = parsedChapters[currentChapterIndex] || parsedChapters[0];
-          const contentToRender = activeChapter ? activeChapter.content : text;
+          const contentToRender = activeChapter ? activeChapter.content : result.text;
           setHtmlContent(contentToRender);
 
-          // Persist to offline IndexedDB
-          saveOfflineEbook(currentBook, parsedChapters, text);
+          // Cache for instant offline access next time
+          cacheEbook(currentBook.id, result.text, parsedChapters, result.format, result.sourceUrl, result.gutenbergId);
           setIsStoredOffline(true);
         }
       } catch (err) {
@@ -483,6 +487,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
       currentBook.ebookChapters?.length || 1
     );
     updateEbookReadingPosition(currentBook.id, currentChapterIndex, progress);
+    updateCachedPosition(currentBook.id, currentChapterIndex, progress);
 
     // Dismiss floating selection on active scroll
     if (selectionMenu) setSelectionMenu(null);
@@ -634,11 +639,19 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     setActiveSidebarTab('dictionary');
 
     try {
-      const res = await fetch(`/api/dictionary/${encodeURIComponent(clean)}`);
-      if (!res.ok) {
-        throw new Error(`No definition found for "${clean}".`);
+      const dictUrl = `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(clean)}`;
+      let data: any = null;
+
+      if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.()) {
+        const { Http } = await import('@capacitor-community/http');
+        const response = await Http.request({ method: 'GET', url: dictUrl, headers: { Accept: 'application/json' } });
+        data = response.data;
+      } else {
+        const res = await fetch(dictUrl);
+        if (!res.ok) throw new Error(`No definition found for "${clean}".`);
+        data = await res.json();
       }
-      const data = await res.json();
+
       if (Array.isArray(data) && data.length > 0) {
         setDictionaryData(data[0]);
       } else {
@@ -1181,26 +1194,44 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
                   <div className="h-4 w-full bg-white/5 rounded" />
                   <div className="h-4 w-3/4 bg-white/5 rounded" />
                 </div>
+                <div className="flex items-center justify-center gap-2 py-4 text-white/40 text-xs font-sans">
+                  <div className="w-3.5 h-3.5 border-2 border-[#C5A059] border-t-transparent rounded-full animate-spin" />
+                  <span>Loading ebook from Project Gutenberg...</span>
+                </div>
               </div>
             ) : error ? (
               <div className="text-center py-20 opacity-90 max-w-md mx-auto space-y-5 font-sans">
-                <div className="w-14 h-14 rounded-2xl bg-[#C5A059]/10 text-[#C5A059] border border-[#C5A059]/20 flex items-center justify-center mx-auto">
+                <div className="w-14 h-14 rounded-2xl bg-red-500/10 text-red-400 border border-red-500/20 flex items-center justify-center mx-auto">
                   <BookOpen className="w-7 h-7" />
                 </div>
                 <div className="space-y-1">
-                  <p className="text-sm font-semibold text-[#C5A059]">Digital Text Unbound</p>
-                  <p className="text-xs opacity-65 leading-relaxed">
-                    We could not auto-fetch the digital Gutenberg manuscript for this title. You can import any local .epub or .txt file to read seamlessly!
+                  <p className="text-sm font-semibold text-red-400">Failed to Load eBook</p>
+                  <p className="text-xs opacity-65 leading-relaxed text-white/50">
+                    {error}
                   </p>
                 </div>
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isUploading}
-                  className="px-5 py-2.5 rounded-xl bg-[#C5A059] hover:bg-[#d4af65] text-black font-semibold text-xs inline-flex items-center gap-2 transition-all shadow-lg cursor-pointer"
-                >
-                  <Upload className="w-4 h-4" />
-                  <span>{isUploading ? 'Parsing Document...' : 'Upload EPUB to Read'}</span>
-                </button>
+                <div className="flex items-center justify-center gap-3">
+                  <button
+                    onClick={() => {
+                      setError(null);
+                      setIsLoading(true);
+                      // Trigger re-fetch by toggling a retry counter
+                      setCurrentChapterIndex((prev) => prev);
+                    }}
+                    className="px-5 py-2.5 rounded-xl bg-[#C5A059] hover:bg-[#d4af65] text-black font-semibold text-xs inline-flex items-center gap-2 transition-all shadow-lg cursor-pointer"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span>Retry Connection</span>
+                  </button>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading}
+                    className="px-5 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-white/70 hover:text-white border border-white/10 font-semibold text-xs inline-flex items-center gap-2 transition-all cursor-pointer"
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span>{isUploading ? 'Parsing...' : 'Upload EPUB'}</span>
+                  </button>
+                </div>
               </div>
             ) : (
               <>
