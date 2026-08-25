@@ -246,29 +246,29 @@ export const SearchView: React.FC<SearchViewProps> = ({
   };
 
   return (
-    <div id="search-view-container" className="w-full flex flex-col pb-24 text-[#EFEFEF]">
+    <div id="search-view-container" className="w-full flex flex-col pb-24 text-[var(--text-main)]">
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-serif-display italic font-bold text-white tracking-wide">
+        <h1 className="text-xl font-serif-display italic font-bold text-[var(--text-main)] tracking-wide">
           Search Catalog
         </h1>
       </div>
 
       {/* Search Input Bar */}
       <div id="search-input-wrapper" className="relative mb-3">
-        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#C5A059]" />
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--accent)]" />
         <input
           id="input-audiobook-search"
           type="text"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           placeholder="Search any title, author, or keyword (e.g. Dracula, Poe)..."
-          className="w-full pl-10 pr-9 py-2.5 rounded-xl bg-[#111111] border border-white/10 focus:border-[#C5A059] text-xs text-[#EFEFEF] placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[#C5A059] transition-all"
+          className="w-full pl-10 pr-9 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border-subtle)] focus:border-[var(--accent)] text-xs text-[var(--text-main)] placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[var(--accent)] transition-all"
         />
         {searchTerm && (
           <button
             id="btn-clear-search"
             onClick={() => setSearchTerm('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-dim)] hover:text-[var(--text-main)]"
           >
             <X className="w-4 h-4" />
           </button>
@@ -282,7 +282,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
             key={term}
             id={`chip-${term.toLowerCase().replace(/\s+/g, '-')}`}
             onClick={() => setSearchTerm(term)}
-            className="shrink-0 px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-[10px] font-medium text-white/70 hover:text-[#C5A059] border border-white/10 hover:border-[#C5A059]/40 transition-all font-serif-display italic whitespace-nowrap"
+            className="shrink-0 px-2.5 py-1 rounded-lg bg-[var(--surface-raised)] hover:bg-[var(--surface-raised)] text-[10px] font-medium text-[var(--text-main)] hover:text-[var(--accent)] border border-[var(--border-subtle)] hover:border-[var(--accent)] transition-all font-serif-display italic whitespace-nowrap"
           >
             {term}
           </button>
@@ -292,32 +292,32 @@ export const SearchView: React.FC<SearchViewProps> = ({
       {/* Search Results */}
       <div id="search-results-wrapper" className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10">
         {isSearching ? (
-          <div className="flex flex-col items-center justify-center h-48 text-[#888888]">
-            <div className="w-5 h-5 border-2 border-[#C5A059] border-t-transparent rounded-full animate-spin mb-2.5" />
+          <div className="flex flex-col items-center justify-center h-48 text-[var(--text-dim)]">
+            <div className="w-5 h-5 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin mb-2.5" />
             <p className="text-xs font-serif-display italic">Searching LibriVox & Internet Archive catalogs...</p>
           </div>
         ) : debouncedTerm.trim() === '' ? (
-          <div id="search-empty-prompt" className="flex flex-col items-center justify-center h-48 text-white/40 text-center px-4">
-            <div className="w-12 h-12 rounded-full bg-white/[0.03] border border-white/10 flex items-center justify-center text-[#C5A059] mb-3 shadow-lg">
+          <div id="search-empty-prompt" className="flex flex-col items-center justify-center h-48 text-[var(--text-dim)] text-center px-4">
+            <div className="w-12 h-12 rounded-full bg-[var(--surface-raised)] border border-[var(--border-subtle)] flex items-center justify-center text-[var(--accent)] mb-3 shadow-lg">
               <Sparkles className="w-5 h-5" />
             </div>
-            <h3 className="text-sm font-serif-display italic font-medium text-white">Discover Timeless Audiobooks & Ebooks</h3>
-            <p className="text-xs text-[#888888] mt-1 max-w-[280px] leading-relaxed">
+            <h3 className="text-sm font-serif-display italic font-medium text-[var(--text-main)]">Discover Timeless Audiobooks & Ebooks</h3>
+            <p className="text-xs text-[var(--text-dim)] mt-1 max-w-[280px] leading-relaxed">
               Search the public domain collection or upload your own EPUB to read and listen offline.
             </p>
           </div>
         ) : results.length === 0 ? (
-          <div id="search-no-results" className="flex flex-col items-center justify-center py-12 text-white/40 text-center px-4 space-y-3">
-            <SearchX className="w-8 h-8 text-white/20" />
+          <div id="search-no-results" className="flex flex-col items-center justify-center py-12 text-[var(--text-dim)] text-center px-4 space-y-3">
+            <SearchX className="w-8 h-8 text-[var(--text-dim)]" />
             <div>
-              <h3 className="text-sm font-serif-display italic font-medium text-white">No results found for &ldquo;{debouncedTerm}&rdquo;</h3>
-              <p className="text-xs text-[#888888] mt-1">Try searching with a different author, title, or keyword.</p>
+              <h3 className="text-sm font-serif-display italic font-medium text-[var(--text-main)]">No results found for &ldquo;{debouncedTerm}&rdquo;</h3>
+              <p className="text-xs text-[var(--text-dim)] mt-1">Try searching with a different author, title, or keyword.</p>
             </div>
           </div>
         ) : (
           <div id="search-results-list" className="space-y-2">
             <div className="flex items-center justify-between px-1">
-              <p className="text-[10px] uppercase tracking-widest text-[#888888] font-medium">{results.length} Works Found</p>
+              <p className="text-[10px] uppercase tracking-widest text-[var(--text-dim)] font-medium">{results.length} Works Found</p>
             </div>
             {results.map((book) => {
               const isResolving = resolvingBookId === book.id;
@@ -329,9 +329,9 @@ export const SearchView: React.FC<SearchViewProps> = ({
                   key={book.id}
                   id={`search-result-${book.id}`}
                   onClick={() => handleBookClick(book)}
-                  className="flex items-center gap-3 p-2.5 rounded-xl bg-[#111111]/90 border border-white/[0.07] hover:border-[#C5A059]/40 hover:bg-[#161616] transition-all cursor-pointer group"
+                  className="flex items-center gap-3 p-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border-subtle)] hover:border-[var(--accent)] hover:bg-[var(--surface-raised)] transition-all cursor-pointer group"
                 >
-                  <div className="w-11 h-15 shrink-0 rounded-lg overflow-hidden bg-[#1a1a1a] border border-white/5 relative">
+                  <div className="w-11 h-15 shrink-0 rounded-lg overflow-hidden bg-[var(--surface)] border border-[var(--border-subtle)] relative">
                     <img
                       src={book.coverImageUrl}
                       alt={book.title}
@@ -344,24 +344,24 @@ export const SearchView: React.FC<SearchViewProps> = ({
                     />
                     {isResolving && (
                       <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center">
-                        <div className="w-4 h-4 border-2 border-[#C5A059] border-t-transparent rounded-full animate-spin" />
+                        <div className="w-4 h-4 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
                       </div>
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h4 className="text-xs font-serif-display italic font-medium text-[#EFEFEF] truncate group-hover:text-[#C5A059] transition-colors">
+                    <h4 className="text-xs font-serif-display italic font-medium text-[var(--text-main)] truncate group-hover:text-[var(--accent)] transition-colors">
                       {book.title}
                     </h4>
-                    <p className="text-[11px] text-[#888888] font-serif-display italic truncate mt-0.5">{book.author}</p>
-                    <div className="flex items-center gap-2 text-[10px] text-white/40 mt-1">
+                    <p className="text-[11px] text-[var(--text-dim)] font-serif-display italic truncate mt-0.5">{book.author}</p>
+                    <div className="flex items-center gap-2 text-[10px] text-[var(--text-dim)] mt-1">
                       <span className="flex items-center gap-1">
-                        <Clock className="w-2.5 h-2.5 text-[#C5A059]/70" />
+                        <Clock className="w-2.5 h-2.5 text-[var(--accent)]" />
                         {Math.round(book.totalTimeSecs / 3600) || 1}h
                       </span>
                       <span>•</span>
-                      <span className="text-[#C5A059] uppercase tracking-wider text-[9px]">{book.language}</span>
+                      <span className="text-[var(--accent)] uppercase tracking-wider text-[9px]">{book.language}</span>
                       <span>•</span>
-                      <span className="text-white/30 truncate">{book.tracks.length} track{book.tracks.length > 1 ? 's' : ''}</span>
+                      <span className="text-[var(--text-dim)] truncate">{book.tracks.length} track{book.tracks.length > 1 ? 's' : ''}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
@@ -372,7 +372,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
                           e.stopPropagation();
                           onReadBook(book);
                         }}
-                        className="w-8 h-8 rounded-full bg-white/[0.04] hover:bg-[#C5A059]/20 text-white/50 hover:text-[#C5A059] flex items-center justify-center transition-all border border-white/10 hover:border-[#C5A059]/40"
+                        className="w-8 h-8 rounded-full bg-[var(--surface-raised)] hover:bg-[var(--accent-dim)] text-[var(--text-dim)] hover:text-[var(--accent)] flex items-center justify-center transition-all border border-[var(--border-subtle)] hover:border-[var(--accent)]"
                         title="Read Ebook Edition"
                       >
                         <BookOpen className="w-3.5 h-3.5" />
@@ -381,7 +381,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
 
                     <button
                       id={`btn-play-result-${book.id}`}
-                      className="w-8 h-8 rounded-full bg-white/[0.05] group-hover:bg-[#C5A059] text-white/60 group-hover:text-black flex items-center justify-center transition-all border border-white/10 group-hover:border-[#C5A059] group-hover:shadow-[0_0_12px_rgba(197,160,89,0.4)]"
+                      className="w-8 h-8 rounded-full bg-[var(--surface-raised)] group-hover:bg-[var(--accent)] text-[var(--text-dim)] group-hover:text-black flex items-center justify-center transition-all border border-[var(--border-subtle)] group-hover:border-[var(--accent)] group-hover:shadow-[0_0_12px_rgba(var(--accent-rgb),0.4)]"
                       title="Open Book Details & Chapters"
                     >
                       {isResolving ? (

@@ -50,6 +50,8 @@ export const ListeningHabitsChart: React.FC = () => {
     });
   }
 
+  const hasActivity = last7Days.some((d) => Number.isFinite(d.totalMins) && d.totalMins > 0);
+
   useEffect(() => {
     if (!wrapperRef.current || !chartRef.current) return;
 
@@ -77,8 +79,12 @@ export const ListeningHabitsChart: React.FC = () => {
         .padding(0.35)
         .domain(last7Days.map((d) => d.dayLabel));
 
-      const maxMins = d3.max(last7Days, (d) => (activeView === 'listen' ? d.listenMins : activeView === 'read' ? d.readMins : d.totalMins)) || 10;
-      const yMax = Math.max(maxMins * 1.25, 5);
+      const maxMins =
+        d3.max(last7Days, (d) =>
+          activeView === 'listen' ? d.listenMins : activeView === 'read' ? d.readMins : d.totalMins
+        ) || 10;
+      const safeMax = Number.isFinite(maxMins) ? maxMins : 10;
+      const yMax = Math.max(safeMax * 1.25, 5);
 
       const y = d3.scaleLinear().range([height, 0]).domain([0, yMax]);
 
@@ -196,25 +202,25 @@ export const ListeningHabitsChart: React.FC = () => {
   return (
     <div
       id="true-activity-widget"
-      className="p-4 sm:p-5 rounded-2xl bg-[#111111] border border-white/[0.08] shadow-lg"
+      className="p-4 sm:p-5 rounded-2xl bg-[var(--surface)] border border-[var(--border-subtle)] shadow-lg"
     >
       {/* Top Metrics Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
           <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4 text-[#C5A059]" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+            <Activity className="w-4 h-4 text-[var(--accent)]" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-main)]">
               True Reading & Listening Time
             </h3>
           </div>
-          <p className="text-[11px] text-white/50 mt-0.5">
+          <p className="text-[11px] text-[var(--text-dim)] mt-0.5">
             Real time logged on this device across audiobooks and ebooks
           </p>
         </div>
 
         {/* Day Streak Badge */}
         {summary.dailyStreak > 0 && (
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#C5A059]/15 border border-[#C5A059]/30 text-[#C5A059] text-xs font-bold font-mono">
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[var(--accent-dim)] border border-[var(--accent)] text-[var(--accent)] text-xs font-bold font-mono">
             <Flame className="w-3.5 h-3.5 fill-current text-amber-400" />
             <span>{summary.dailyStreak} Day Streak</span>
           </div>
@@ -223,32 +229,32 @@ export const ListeningHabitsChart: React.FC = () => {
 
       {/* Primary True Time Counters */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mb-4">
-        <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-white/50 text-[10px] uppercase tracking-wider">
+        <div className="p-3 rounded-xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[var(--text-dim)] text-[10px] uppercase tracking-wider">
             <span>True Listening</span>
-            <Headphones className="w-3.5 h-3.5 text-[#C5A059]" />
+            <Headphones className="w-3.5 h-3.5 text-[var(--accent)]" />
           </div>
-          <div className="text-sm sm:text-base font-bold font-mono text-white mt-1">
+          <div className="text-sm sm:text-base font-bold font-mono text-[var(--text-main)] mt-1">
             {formatTrueDuration(summary.totalListenedSeconds)}
           </div>
         </div>
 
-        <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-white/50 text-[10px] uppercase tracking-wider">
+        <div className="p-3 rounded-xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[var(--text-dim)] text-[10px] uppercase tracking-wider">
             <span>True Reading</span>
             <BookOpen className="w-3.5 h-3.5 text-blue-400" />
           </div>
-          <div className="text-sm sm:text-base font-bold font-mono text-white mt-1">
+          <div className="text-sm sm:text-base font-bold font-mono text-[var(--text-main)] mt-1">
             {formatTrueDuration(summary.totalReadSeconds)}
           </div>
         </div>
 
-        <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 col-span-2 sm:col-span-1 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-white/50 text-[10px] uppercase tracking-wider">
+        <div className="p-3 rounded-xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] col-span-2 sm:col-span-1 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[var(--text-dim)] text-[10px] uppercase tracking-wider">
             <span>Books Engaged</span>
-            <Activity className="w-3.5 h-3.5 text-[#C5A059]" />
+            <Activity className="w-3.5 h-3.5 text-[var(--accent)]" />
           </div>
-          <div className="text-sm sm:text-base font-bold font-mono text-[#C5A059] mt-1">
+          <div className="text-sm sm:text-base font-bold font-mono text-[var(--accent)] mt-1">
             {summary.booksStartedCount} Book{summary.booksStartedCount !== 1 ? 's' : ''}
           </div>
         </div>
@@ -256,14 +262,14 @@ export const ListeningHabitsChart: React.FC = () => {
 
       {/* Chart Filter Toggles */}
       <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">
+        <span className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold">
           7-Day Activity Trend
         </span>
-        <div className="flex items-center gap-1 bg-white/[0.04] p-0.5 rounded-lg border border-white/5">
+        <div className="flex items-center gap-1 bg-[var(--surface-raised)] p-0.5 rounded-lg border border-[var(--border-subtle)]">
           <button
             onClick={() => setActiveView('both')}
             className={`px-2 py-0.5 rounded text-[10px] font-medium transition-all ${
-              activeView === 'both' ? 'bg-[#C5A059] text-black font-bold' : 'text-white/60 hover:text-white'
+              activeView === 'both' ? 'bg-[var(--accent)] text-black font-bold' : 'text-[var(--text-dim)] hover:text-[var(--text-main)]'
             }`}
           >
             All
@@ -271,15 +277,15 @@ export const ListeningHabitsChart: React.FC = () => {
           <button
             onClick={() => setActiveView('listen')}
             className={`px-2 py-0.5 rounded text-[10px] font-medium transition-all flex items-center gap-1 ${
-              activeView === 'listen' ? 'bg-[#C5A059] text-black font-bold' : 'text-white/60 hover:text-white'
+              activeView === 'listen' ? 'bg-[var(--accent)] text-black font-bold' : 'text-[var(--text-dim)] hover:text-[var(--text-main)]'
             }`}
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-[#C5A059]" /> Audio
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" /> Audio
           </button>
           <button
             onClick={() => setActiveView('read')}
             className={`px-2 py-0.5 rounded text-[10px] font-medium transition-all flex items-center gap-1 ${
-              activeView === 'read' ? 'bg-blue-400 text-black font-bold' : 'text-white/60 hover:text-white'
+              activeView === 'read' ? 'bg-blue-400 text-black font-bold' : 'text-[var(--text-dim)] hover:text-[var(--text-main)]'
             }`}
           >
             <span className="w-1.5 h-1.5 rounded-full bg-blue-400" /> Reading
@@ -288,8 +294,13 @@ export const ListeningHabitsChart: React.FC = () => {
       </div>
 
       {/* D3 Real-Time SVG Canvas */}
-      <div ref={wrapperRef} className="w-full">
+      <div ref={wrapperRef} className="w-full relative">
         <svg ref={chartRef} className="w-full overflow-visible" />
+        {!hasActivity && (
+          <div className="absolute inset-0 flex items-center justify-center text-xs text-[var(--text-dim)] text-center px-4">
+            No listening or reading activity recorded in the last 7 days yet.
+          </div>
+        )}
       </div>
     </div>
   );

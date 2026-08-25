@@ -140,20 +140,20 @@ export const StatsView: React.FC<StatsViewProps> = ({
   return (
     <div id="stats-view-page" className="space-y-6 max-w-4xl mx-auto pb-16">
       {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/[0.08]">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[var(--border-subtle)]">
         <div>
-          <h1 className="text-xl sm:text-2xl font-serif-display italic font-bold text-white tracking-wide flex items-center gap-2">
-            <BarChart3 className="w-6 h-6 text-[#C5A059]" />
+          <h1 className="text-xl sm:text-2xl font-serif-display italic font-bold text-[var(--text-main)] tracking-wide flex items-center gap-2">
+            <BarChart3 className="w-6 h-6 text-[var(--accent)]" />
             Listening & Reading Analytics
           </h1>
-          <p className="text-xs text-white/50 font-serif-display italic mt-0.5">
+          <p className="text-xs text-[var(--text-dim)] font-serif-display italic mt-0.5">
             Real-time audiobook velocity, immersion ratios, and milestone achievements
           </p>
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
           {summary.dailyStreak > 0 && (
-            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#C5A059]/15 border border-[#C5A059]/30 text-[#C5A059] text-xs font-mono font-bold">
+            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[var(--accent-dim)] border border-[var(--accent)] text-[var(--accent)] text-xs font-mono font-bold">
               <Flame className="w-4 h-4 text-amber-400 fill-current" />
               <span>{summary.dailyStreak} Day Streak</span>
             </div>
@@ -161,7 +161,7 @@ export const StatsView: React.FC<StatsViewProps> = ({
 
           <button
             onClick={() => setShowClearConfirm(!showClearConfirm)}
-            className="p-2 rounded-xl bg-white/[0.03] hover:bg-white/10 text-white/40 hover:text-white border border-white/5 text-xs transition-colors"
+            className="p-2 rounded-xl bg-[var(--surface-raised)] hover:bg-[var(--surface-raised)] text-[var(--text-dim)] hover:text-[var(--text-main)] border border-[var(--border-subtle)] text-xs transition-colors"
             title="Manage Data"
           >
             <RotateCcw className="w-3.5 h-3.5" />
@@ -181,13 +181,13 @@ export const StatsView: React.FC<StatsViewProps> = ({
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => setShowClearConfirm(false)}
-              className="px-3 py-1.5 rounded-xl bg-white/10 text-white text-xs font-medium hover:bg-white/20"
+              className="px-3 py-1.5 rounded-xl bg-[var(--surface-raised)] text-[var(--text-main)] text-xs font-medium hover:bg-[var(--surface-raised)]"
             >
               Cancel
             </button>
             <button
               onClick={handleClearAllHistory}
-              className="px-3 py-1.5 rounded-xl bg-red-600 text-white text-xs font-bold hover:bg-red-500 shadow-md"
+              className="px-3 py-1.5 rounded-xl bg-red-600 text-[var(--text-main)] text-xs font-bold hover:bg-red-500 shadow-md"
             >
               Reset All
             </button>
@@ -198,33 +198,33 @@ export const StatsView: React.FC<StatsViewProps> = ({
       {/* Primary Key Metric Highlights */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {/* Audiobook Time */}
-        <div className="p-4 rounded-2xl bg-[#111111] border border-white/[0.08] flex flex-col justify-between relative overflow-hidden group hover:border-[#C5A059]/30 transition-all">
-          <div className="flex items-center justify-between text-white/50 text-[10px] uppercase font-semibold">
+        <div className="p-4 rounded-2xl bg-[var(--surface)] border border-[var(--border-subtle)] flex flex-col justify-between relative overflow-hidden group hover:border-[var(--accent)] transition-all">
+          <div className="flex items-center justify-between text-[var(--text-dim)] text-[10px] uppercase font-semibold">
             <span>Audiobook Time</span>
-            <Headphones className="w-4 h-4 text-[#C5A059]" />
+            <Headphones className="w-4 h-4 text-[var(--accent)]" />
           </div>
           <div className="mt-3">
-            <div className="text-lg sm:text-xl font-bold font-mono text-white truncate">
+            <div className="text-lg sm:text-xl font-bold font-mono text-[var(--text-main)] truncate">
               {formatTrueDuration(summary.totalListenedSeconds)}
             </div>
-            <p className="text-[10px] text-white/40 mt-0.5 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#C5A059]" />
+            <p className="text-[10px] text-[var(--text-dim)] mt-0.5 flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
               {audioPercentage}% of total immersion
             </p>
           </div>
         </div>
 
         {/* Ebook Time */}
-        <div className="p-4 rounded-2xl bg-[#111111] border border-white/[0.08] flex flex-col justify-between relative overflow-hidden group hover:border-blue-500/30 transition-all">
-          <div className="flex items-center justify-between text-white/50 text-[10px] uppercase font-semibold">
+        <div className="p-4 rounded-2xl bg-[var(--surface)] border border-[var(--border-subtle)] flex flex-col justify-between relative overflow-hidden group hover:border-blue-500/30 transition-all">
+          <div className="flex items-center justify-between text-[var(--text-dim)] text-[10px] uppercase font-semibold">
             <span>Ebook Reading</span>
             <BookOpen className="w-4 h-4 text-blue-400" />
           </div>
           <div className="mt-3">
-            <div className="text-lg sm:text-xl font-bold font-mono text-white truncate">
+            <div className="text-lg sm:text-xl font-bold font-mono text-[var(--text-main)] truncate">
               {formatTrueDuration(summary.totalReadSeconds)}
             </div>
-            <p className="text-[10px] text-white/40 mt-0.5 flex items-center gap-1">
+            <p className="text-[10px] text-[var(--text-dim)] mt-0.5 flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
               {readPercentage}% of total immersion
             </p>
@@ -232,30 +232,30 @@ export const StatsView: React.FC<StatsViewProps> = ({
         </div>
 
         {/* Total Immersion */}
-        <div className="p-4 rounded-2xl bg-[#111111] border border-white/[0.08] flex flex-col justify-between relative overflow-hidden group hover:border-[#C5A059]/40 transition-all">
-          <div className="flex items-center justify-between text-white/50 text-[10px] uppercase font-semibold">
+        <div className="p-4 rounded-2xl bg-[var(--surface)] border border-[var(--border-subtle)] flex flex-col justify-between relative overflow-hidden group hover:border-[var(--accent)] transition-all">
+          <div className="flex items-center justify-between text-[var(--text-dim)] text-[10px] uppercase font-semibold">
             <span>Total Immersion</span>
-            <Sparkles className="w-4 h-4 text-[#C5A059]" />
+            <Sparkles className="w-4 h-4 text-[var(--accent)]" />
           </div>
           <div className="mt-3">
-            <div className="text-lg sm:text-xl font-bold font-mono text-[#C5A059] truncate">
+            <div className="text-lg sm:text-xl font-bold font-mono text-[var(--accent)] truncate">
               {formatTrueDuration(summary.totalCombinedSeconds)}
             </div>
-            <p className="text-[10px] text-white/40 mt-0.5">
+            <p className="text-[10px] text-[var(--text-dim)] mt-0.5">
               Across {summary.booksStartedCount || history.length} titles
             </p>
           </div>
         </div>
 
         {/* Daily Velocity */}
-        <div className="p-4 rounded-2xl bg-[#111111] border border-white/[0.08] flex flex-col justify-between relative overflow-hidden group hover:border-emerald-500/30 transition-all">
-          <div className="flex items-center justify-between text-white/50 text-[10px] uppercase font-semibold">
+        <div className="p-4 rounded-2xl bg-[var(--surface)] border border-[var(--border-subtle)] flex flex-col justify-between relative overflow-hidden group hover:border-emerald-500/30 transition-all">
+          <div className="flex items-center justify-between text-[var(--text-dim)] text-[10px] uppercase font-semibold">
             <span>Daily Velocity</span>
             <TrendingUp className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="mt-3">
-            <div className="text-lg sm:text-xl font-bold font-mono text-white">
-              {velocity.dailyAverageMinutes}m <span className="text-xs text-white/40 font-sans">/ day</span>
+            <div className="text-lg sm:text-xl font-bold font-mono text-[var(--text-main)]">
+              {velocity.dailyAverageMinutes}m <span className="text-xs text-[var(--text-dim)] font-sans">/ day</span>
             </div>
             <p className="text-[10px] text-emerald-400/80 mt-0.5 font-mono">
               ~{velocity.weeklyVelocityHours}h weekly pace
@@ -265,21 +265,21 @@ export const StatsView: React.FC<StatsViewProps> = ({
       </div>
 
       {/* Audio vs Ebook Immersion Split Bar */}
-      <div className="p-4 rounded-2xl bg-[#111111] border border-white/[0.08] space-y-2">
+      <div className="p-4 rounded-2xl bg-[var(--surface)] border border-[var(--border-subtle)] space-y-2">
         <div className="flex items-center justify-between text-xs">
           <div className="flex items-center gap-2">
-            <Layers className="w-3.5 h-3.5 text-[#C5A059]" />
-            <span className="font-semibold text-white">Immersion Format Breakdown</span>
+            <Layers className="w-3.5 h-3.5 text-[var(--accent)]" />
+            <span className="font-semibold text-[var(--text-main)]">Immersion Format Breakdown</span>
           </div>
           <div className="flex items-center gap-3 text-[11px] font-mono">
-            <span className="text-[#C5A059] font-bold">🎧 {audioPercentage}% Audio</span>
+            <span className="text-[var(--accent)] font-bold">🎧 {audioPercentage}% Audio</span>
             <span className="text-blue-400 font-bold">📖 {readPercentage}% Ebook</span>
           </div>
         </div>
 
-        <div className="w-full h-2.5 bg-white/5 rounded-full overflow-hidden flex p-0.5 border border-white/10">
+        <div className="w-full h-2.5 bg-[var(--surface-raised)] rounded-full overflow-hidden flex p-0.5 border border-[var(--border-subtle)]">
           <div
-            className="h-full bg-[#C5A059] rounded-l-full transition-all duration-700 shadow-sm"
+            className="h-full bg-[var(--accent)] rounded-l-full transition-all duration-700 shadow-sm"
             style={{ width: `${Math.max(4, audioPercentage)}%` }}
             title={`Audiobook: ${audioPercentage}%`}
           />
@@ -321,17 +321,17 @@ export const StatsView: React.FC<StatsViewProps> = ({
       </section>
 
       {/* 14-Day Activity Calendar & Session History Drill-Down */}
-      <section id="stats-calendar-section" className="p-5 rounded-2xl bg-[#111111] border border-white/[0.08] shadow-xl space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-white/5">
+      <section id="stats-calendar-section" className="p-5 rounded-2xl bg-[var(--surface)] border border-[var(--border-subtle)] shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-[var(--border-subtle)]">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-xl bg-[#C5A059]/15 border border-[#C5A059]/30 flex items-center justify-center text-[#C5A059]">
-              <CalendarIcon className="w-4 h-4 text-[#C5A059]" />
+            <div className="w-7 h-7 rounded-xl bg-[var(--accent-dim)] border border-[var(--accent)] flex items-center justify-center text-[var(--accent)]">
+              <CalendarIcon className="w-4 h-4 text-[var(--accent)]" />
             </div>
             <div>
-              <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-white">
+              <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-[var(--text-main)]">
                 14-Day Activity Heatmap
               </h3>
-              <p className="text-[11px] text-white/50 mt-0.5">
+              <p className="text-[11px] text-[var(--text-dim)] mt-0.5">
                 Click any day to filter your recorded reading & listening sessions
               </p>
             </div>
@@ -340,7 +340,7 @@ export const StatsView: React.FC<StatsViewProps> = ({
           {selectedDateFilter && (
             <button
               onClick={() => setSelectedDateFilter(null)}
-              className="text-[11px] text-[#C5A059] hover:underline font-mono self-start sm:self-auto"
+              className="text-[11px] text-[var(--accent)] hover:underline font-mono self-start sm:self-auto"
             >
               Clear filter ({selectedDateFilter})
             </button>
@@ -358,14 +358,14 @@ export const StatsView: React.FC<StatsViewProps> = ({
                 onClick={() => setSelectedDateFilter(isSelected ? null : d.dateStr)}
                 className={`p-2 rounded-xl border flex flex-col items-center justify-center transition-all cursor-pointer ${
                   isSelected
-                    ? 'bg-[#C5A059] text-black border-[#C5A059] font-bold shadow-md shadow-[#C5A059]/20'
+                    ? 'bg-[var(--accent)] text-black border-[var(--accent)] font-bold shadow-md shadow-[rgba(var(--accent-rgb),0.3)]'
                     : hasActivity
-                    ? 'bg-[#C5A059]/10 border-[#C5A059]/30 text-white hover:bg-[#C5A059]/20'
-                    : 'bg-white/[0.02] border-white/5 text-white/40 hover:bg-white/5'
+                    ? 'bg-[var(--accent-dim)] border-[var(--accent)] text-[var(--text-main)] hover:bg-[var(--accent-dim)]'
+                    : 'bg-[var(--surface-raised)] border-[var(--border-subtle)] text-[var(--text-dim)] hover:bg-[var(--surface-raised)]'
                 }`}
                 title={`${d.dateStr}: ${d.count} sessions (${formatTrueDurationShort(d.totalSecs)})`}
               >
-                <span className={`text-[8px] font-mono uppercase ${isSelected ? 'text-black/70' : 'text-white/40'}`}>
+                <span className={`text-[8px] font-mono uppercase ${isSelected ? 'text-black/70' : 'text-[var(--text-dim)]'}`}>
                   {d.dayName}
                 </span>
                 <span className="text-xs font-mono font-bold mt-0.5">
@@ -376,7 +376,7 @@ export const StatsView: React.FC<StatsViewProps> = ({
                     isSelected
                       ? 'bg-black/20 text-black'
                       : hasActivity
-                      ? 'text-[#C5A059] font-bold'
+                      ? 'text-[var(--accent)] font-bold'
                       : 'text-transparent'
                   }`}
                 >
@@ -389,18 +389,18 @@ export const StatsView: React.FC<StatsViewProps> = ({
 
         {/* Sessions Drill-down List */}
         <div className="space-y-2 pt-2">
-          <div className="flex items-center justify-between text-xs text-white/60">
-            <span className="flex items-center gap-1.5 font-semibold text-white">
-              <History className="w-3.5 h-3.5 text-[#C5A059]" />
+          <div className="flex items-center justify-between text-xs text-[var(--text-dim)]">
+            <span className="flex items-center gap-1.5 font-semibold text-[var(--text-main)]">
+              <History className="w-3.5 h-3.5 text-[var(--accent)]" />
               {selectedDateFilter ? `Sessions on ${selectedDateFilter}` : 'Recent Activity Logs'}
             </span>
-            <span className="text-[11px] font-mono text-white/40">
+            <span className="text-[11px] font-mono text-[var(--text-dim)]">
               Showing {visibleSessions.length} record{visibleSessions.length !== 1 ? 's' : ''}
             </span>
           </div>
 
           {visibleSessions.length === 0 ? (
-            <div className="text-center py-8 opacity-50 text-xs bg-white/[0.01] rounded-xl border border-white/5">
+            <div className="text-center py-8 opacity-50 text-xs bg-[var(--surface-raised)] rounded-xl border border-[var(--border-subtle)]">
               No activity logged {selectedDateFilter ? 'for this date' : 'yet'}.
             </div>
           ) : (
@@ -408,31 +408,31 @@ export const StatsView: React.FC<StatsViewProps> = ({
               {visibleSessions.map((s) => (
                 <div
                   key={s.id}
-                  className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-white/[0.02] hover:bg-white/[0.04] border border-white/5 transition-all group"
+                  className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-[var(--surface-raised)] hover:bg-[var(--surface-raised)] border border-[var(--border-subtle)] transition-all group"
                 >
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <div className="w-6 h-6 rounded-lg bg-[#C5A059]/15 border border-[#C5A059]/30 flex items-center justify-center text-[#C5A059] shrink-0">
-                      {s.chapterTitle ? <BookOpen className="w-3 h-3 text-blue-400" /> : <Headphones className="w-3 h-3 text-[#C5A059]" />}
+                    <div className="w-6 h-6 rounded-lg bg-[var(--accent-dim)] border border-[var(--accent)] flex items-center justify-center text-[var(--accent)] shrink-0">
+                      {s.chapterTitle ? <BookOpen className="w-3 h-3 text-blue-400" /> : <Headphones className="w-3 h-3 text-[var(--accent)]" />}
                     </div>
 
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs font-serif-display italic font-semibold text-white truncate">
+                      <p className="text-xs font-serif-display italic font-semibold text-[var(--text-main)] truncate">
                         {s.bookTitle}
                       </p>
-                      <p className="text-[10px] text-white/40 truncate">
+                      <p className="text-[10px] text-[var(--text-dim)] truncate">
                         {s.chapterTitle || 'Audiobook track'} • {new Date(s.endTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-xs font-mono font-bold text-[#C5A059]">
+                    <span className="text-xs font-mono font-bold text-[var(--accent)]">
                       {formatTrueDurationShort(s.durationSeconds)}
                     </span>
 
                     <button
                       onClick={(e) => handleDeleteSession(s.id, e)}
-                      className="p-1 rounded-lg text-white/20 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all"
+                      className="p-1 rounded-lg text-[var(--text-dim)] hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all"
                       title="Remove session log"
                     >
                       <Trash2 className="w-3.5 h-3.5" />

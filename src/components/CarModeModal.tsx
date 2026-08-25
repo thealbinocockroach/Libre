@@ -41,25 +41,25 @@ export const CarModeModal: React.FC<CarModeModalProps> = ({
   return (
     <div
       id="car-mode-modal"
-      className="fixed inset-0 z-50 bg-black text-white flex flex-col justify-between p-6 select-none animate-fade-in"
+      className="fixed inset-0 z-50 bg-black text-[var(--text-main)] flex flex-col justify-between p-6 select-none animate-fade-in"
     >
       {/* Top Status Bar */}
-      <header className="flex items-center justify-between border-b border-white/15 pb-4">
+      <header className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-4">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-2xl bg-[#C5A059] text-black">
+          <div className="p-2.5 rounded-2xl bg-[var(--accent)] text-black">
             <Car className="w-6 h-6" />
           </div>
           <div>
-            <span className="text-[11px] uppercase font-bold tracking-[0.25em] text-[#C5A059]">
+            <span className="text-[11px] uppercase font-bold tracking-[0.25em] text-[var(--accent)]">
               Car Driving Mode
             </span>
-            <h2 className="text-sm font-medium text-white/70">Simplified High-Contrast Controls</h2>
+            <h2 className="text-sm font-medium text-[var(--text-main)]">Simplified High-Contrast Controls</h2>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
           {sleepTimer.isActive && (
-            <div className="px-3 py-1.5 rounded-full bg-[#C5A059]/20 border border-[#C5A059]/40 text-[#C5A059] text-xs font-mono font-bold flex items-center gap-1.5">
+            <div className="px-3 py-1.5 rounded-full bg-[var(--accent-dim)] border border-[var(--accent)] text-[var(--accent)] text-xs font-mono font-bold flex items-center gap-1.5">
               <Moon className="w-3.5 h-3.5 fill-current" />
               <span>{Math.ceil(sleepTimer.remainingSeconds / 60)}m</span>
             </div>
@@ -67,7 +67,7 @@ export const CarModeModal: React.FC<CarModeModalProps> = ({
           <button
             id="btn-exit-car-mode"
             onClick={onClose}
-            className="px-4 py-2 rounded-2xl border border-white/20 hover:bg-white/10 text-xs font-bold uppercase tracking-wider transition-colors"
+            className="px-4 py-2 rounded-2xl border border-[var(--border-subtle)] hover:bg-[var(--surface-raised)] text-xs font-bold uppercase tracking-wider transition-colors"
           >
             Exit
           </button>
@@ -76,16 +76,16 @@ export const CarModeModal: React.FC<CarModeModalProps> = ({
 
       {/* Large Book Metadata */}
       <div className="text-center py-6 space-y-3">
-        <span className="text-sm font-semibold tracking-widest text-[#C5A059] uppercase">
+        <span className="text-sm font-semibold tracking-widest text-[var(--accent)] uppercase">
           {currentBook.author}
         </span>
-        <h1 className="text-2xl sm:text-4xl font-serif-display italic font-bold text-white tracking-tight leading-snug line-clamp-2 px-2">
+        <h1 className="text-2xl sm:text-4xl font-serif-display italic font-bold text-[var(--text-main)] tracking-tight leading-snug line-clamp-2 px-2">
           {currentBook.title}
         </h1>
-        <p className="text-sm sm:text-base text-white/60 font-medium">
+        <p className="text-sm sm:text-base text-[var(--text-dim)] font-medium">
           {currentTrack?.title || 'Chapter Audio Track'}
         </p>
-        <div className="text-xs font-mono text-white/40 tracking-wider">
+        <div className="text-xs font-mono text-[var(--text-dim)] tracking-wider">
           {formatTime(currentTime)} / {formatTime(duration || currentTrack?.durationSeconds || 0)}
         </div>
       </div>
@@ -98,10 +98,10 @@ export const CarModeModal: React.FC<CarModeModalProps> = ({
           <button
             id="btn-car-rewind-15"
             onClick={onRewind15}
-            className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/20 active:scale-95 flex flex-col items-center justify-center gap-1 transition-all"
+            className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-[var(--surface-raised)] hover:bg-[var(--surface-raised)] border border-[var(--border-subtle)] active:scale-95 flex flex-col items-center justify-center gap-1 transition-all"
             title="Rewind 15s"
           >
-            <RotateCcw className="w-7 h-7 sm:w-8 sm:h-8 text-[#C5A059]" />
+            <RotateCcw className="w-7 h-7 sm:w-8 sm:h-8 text-[var(--accent)]" />
             <span className="text-[11px] font-bold font-mono">15s</span>
           </button>
 
@@ -109,7 +109,7 @@ export const CarModeModal: React.FC<CarModeModalProps> = ({
           <button
             id="btn-car-play-pause"
             onClick={onTogglePlayPause}
-            className="w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-[#C5A059] hover:bg-[#d4af65] text-black shadow-[0_0_40px_rgba(197,160,89,0.5)] active:scale-90 flex items-center justify-center transition-all"
+            className="w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black shadow-[0_0_40px_rgba(var(--accent-rgb),0.5)] active:scale-90 flex items-center justify-center transition-all"
           >
             {isPlaying ? (
               <Pause className="w-12 h-12 fill-current" />
@@ -122,10 +122,10 @@ export const CarModeModal: React.FC<CarModeModalProps> = ({
           <button
             id="btn-car-forward-30"
             onClick={onForward30}
-            className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/20 active:scale-95 flex flex-col items-center justify-center gap-1 transition-all"
+            className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-[var(--surface-raised)] hover:bg-[var(--surface-raised)] border border-[var(--border-subtle)] active:scale-95 flex flex-col items-center justify-center gap-1 transition-all"
             title="Forward 30s"
           >
-            <RotateCw className="w-7 h-7 sm:w-8 sm:h-8 text-[#C5A059]" />
+            <RotateCw className="w-7 h-7 sm:w-8 sm:h-8 text-[var(--accent)]" />
             <span className="text-[11px] font-bold font-mono">30s</span>
           </button>
         </div>
@@ -135,43 +135,43 @@ export const CarModeModal: React.FC<CarModeModalProps> = ({
           <button
             id="btn-car-prev-track"
             onClick={onPrevTrack}
-            className="py-4 rounded-2xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 active:scale-95 flex flex-col items-center justify-center gap-1"
+            className="py-4 rounded-2xl bg-[var(--surface-raised)] hover:bg-[var(--surface-raised)] border border-[var(--border-subtle)] active:scale-95 flex flex-col items-center justify-center gap-1"
           >
-            <SkipBack className="w-5 h-5 text-white/80" />
-            <span className="text-[10px] font-bold text-white/50">Prev</span>
+            <SkipBack className="w-5 h-5 text-[var(--text-main)]" />
+            <span className="text-[10px] font-bold text-[var(--text-dim)]">Prev</span>
           </button>
 
           <button
             id="btn-car-bookmark"
             onClick={onAddBookmark}
-            className="py-4 rounded-2xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 active:scale-95 flex flex-col items-center justify-center gap-1"
+            className="py-4 rounded-2xl bg-[var(--surface-raised)] hover:bg-[var(--surface-raised)] border border-[var(--border-subtle)] active:scale-95 flex flex-col items-center justify-center gap-1"
           >
-            <Bookmark className="w-5 h-5 text-[#C5A059]" />
-            <span className="text-[10px] font-bold text-white/50">Bookmark</span>
+            <Bookmark className="w-5 h-5 text-[var(--accent)]" />
+            <span className="text-[10px] font-bold text-[var(--text-dim)]">Bookmark</span>
           </button>
 
           <button
             id="btn-car-sleep-timer"
             onClick={onOpenSleepTimer}
-            className="py-4 rounded-2xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 active:scale-95 flex flex-col items-center justify-center gap-1"
+            className="py-4 rounded-2xl bg-[var(--surface-raised)] hover:bg-[var(--surface-raised)] border border-[var(--border-subtle)] active:scale-95 flex flex-col items-center justify-center gap-1"
           >
-            <Moon className="w-5 h-5 text-white/80" />
-            <span className="text-[10px] font-bold text-white/50">Sleep</span>
+            <Moon className="w-5 h-5 text-[var(--text-main)]" />
+            <span className="text-[10px] font-bold text-[var(--text-dim)]">Sleep</span>
           </button>
 
           <button
             id="btn-car-next-track"
             onClick={onNextTrack}
-            className="py-4 rounded-2xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 active:scale-95 flex flex-col items-center justify-center gap-1"
+            className="py-4 rounded-2xl bg-[var(--surface-raised)] hover:bg-[var(--surface-raised)] border border-[var(--border-subtle)] active:scale-95 flex flex-col items-center justify-center gap-1"
           >
-            <SkipForward className="w-5 h-5 text-white/80" />
-            <span className="text-[10px] font-bold text-white/50">Next</span>
+            <SkipForward className="w-5 h-5 text-[var(--text-main)]" />
+            <span className="text-[10px] font-bold text-[var(--text-dim)]">Next</span>
           </button>
         </div>
       </div>
 
       {/* Footer warning */}
-      <footer className="text-center text-[11px] text-white/30 pt-4">
+      <footer className="text-center text-[11px] text-[var(--text-dim)] pt-4">
         Keep your eyes on the road. Controls optimized for safe single-tap touch.
       </footer>
     </div>

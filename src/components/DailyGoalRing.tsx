@@ -65,7 +65,7 @@ export const DailyGoalRing: React.FC = () => {
   return (
     <div
       id="daily-goal-widget"
-      className="p-5 rounded-2xl bg-[#111111] border border-white/[0.08] shadow-xl relative overflow-hidden transition-all duration-300"
+      className="p-5 rounded-2xl bg-[var(--surface)] border border-[var(--border-subtle)] shadow-xl relative overflow-hidden transition-all duration-300"
     >
       {/* Background Subtle Accent Aura */}
       <div
@@ -78,7 +78,7 @@ export const DailyGoalRing: React.FC = () => {
       {/* Top Header */}
       <div className="flex items-center justify-between gap-2 mb-4 relative z-10">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-xl bg-[#C5A059]/15 border border-[#C5A059]/30 flex items-center justify-center text-[#C5A059]">
+          <div className="w-7 h-7 rounded-xl bg-[var(--accent-dim)] border border-[var(--accent)] flex items-center justify-center text-[var(--accent)]">
             {progress.isGoalAchieved ? (
               <Trophy className="w-4 h-4 text-amber-400" />
             ) : (
@@ -86,7 +86,7 @@ export const DailyGoalRing: React.FC = () => {
             )}
           </div>
           <div>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-main)] flex items-center gap-2">
               Daily Listening Goal
               {progress.isGoalAchieved && (
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold border border-emerald-500/30 flex items-center gap-1">
@@ -94,7 +94,7 @@ export const DailyGoalRing: React.FC = () => {
                 </span>
               )}
             </h3>
-            <p className="text-[11px] text-white/50 mt-0.5">
+            <p className="text-[11px] text-[var(--text-dim)] mt-0.5">
               {progress.isGoalAchieved
                 ? `You reached your ${progress.goalMinutes}m target today!`
                 : `${progress.remainingMinutes} mins left to complete today's goal`}
@@ -106,7 +106,7 @@ export const DailyGoalRing: React.FC = () => {
         <button
           id="btn-edit-daily-goal"
           onClick={() => setIsEditingGoal(!isEditingGoal)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.05] hover:bg-[#C5A059]/20 text-white/70 hover:text-[#C5A059] border border-white/10 text-xs font-medium transition-all"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[var(--surface-raised)] hover:bg-[var(--accent-dim)] text-[var(--text-main)] hover:text-[var(--accent)] border border-[var(--border-subtle)] text-xs font-medium transition-all"
           title="Adjust Daily Goal"
         >
           <Edit3 className="w-3.5 h-3.5" />
@@ -116,12 +116,12 @@ export const DailyGoalRing: React.FC = () => {
 
       {/* Goal Edit Drawer / Preset Bar */}
       {isEditingGoal && (
-        <div className="mb-5 p-3.5 rounded-xl bg-white/[0.04] border border-white/10 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="flex items-center justify-between text-xs text-white/80">
-            <span className="font-semibold text-white">Select Daily Goal Target:</span>
+        <div className="mb-5 p-3.5 rounded-xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center justify-between text-xs text-[var(--text-main)]">
+            <span className="font-semibold text-[var(--text-main)]">Select Daily Goal Target:</span>
             <button
               onClick={() => setIsEditingGoal(false)}
-              className="text-[11px] text-white/40 hover:text-white"
+              className="text-[11px] text-[var(--text-dim)] hover:text-[var(--text-main)]"
             >
               Close
             </button>
@@ -135,8 +135,8 @@ export const DailyGoalRing: React.FC = () => {
                 onClick={() => handleSelectPreset(preset)}
                 className={`py-2 px-1 rounded-xl text-xs font-mono font-bold transition-all border ${
                   progress.goalMinutes === preset
-                    ? 'bg-[#C5A059] text-black border-[#C5A059] shadow-md shadow-[#C5A059]/20'
-                    : 'bg-white/[0.04] text-white/70 hover:text-white border-white/10 hover:border-white/20'
+                    ? 'bg-[var(--accent)] text-black border-[var(--accent)] shadow-md shadow-[rgba(var(--accent-rgb),0.3)]'
+                    : 'bg-[var(--surface-raised)] text-[var(--text-main)] hover:text-[var(--text-main)] border-[var(--border-subtle)] hover:border-[var(--border-subtle)]'
                 }`}
               >
                 {preset} min
@@ -145,21 +145,21 @@ export const DailyGoalRing: React.FC = () => {
           </div>
 
           <form onSubmit={handleSaveCustom} className="flex items-center gap-2 pt-1">
-            <div className="flex-1 flex items-center bg-white/[0.03] border border-white/10 rounded-xl px-3 py-1.5">
-              <span className="text-xs text-white/40 mr-2">Custom:</span>
+            <div className="flex-1 flex items-center bg-[var(--surface-raised)] border border-[var(--border-subtle)] rounded-xl px-3 py-1.5">
+              <span className="text-xs text-[var(--text-dim)] mr-2">Custom:</span>
               <input
                 type="number"
                 min="5"
                 max="720"
                 value={customGoal}
                 onChange={(e) => setCustomGoal(parseInt(e.target.value, 10) || 5)}
-                className="w-16 bg-transparent text-xs font-mono text-white focus:outline-none"
+                className="w-16 bg-transparent text-xs font-mono text-[var(--text-main)] focus:outline-none"
               />
-              <span className="text-xs text-white/40">minutes / day</span>
+              <span className="text-xs text-[var(--text-dim)]">minutes / day</span>
             </div>
             <button
               type="submit"
-              className="px-4 py-1.5 rounded-xl bg-[#C5A059] text-black font-semibold text-xs hover:bg-[#d4af65] transition-colors"
+              className="px-4 py-1.5 rounded-xl bg-[var(--accent)] text-black font-semibold text-xs hover:bg-[var(--accent-hover)] transition-colors"
             >
               Apply
             </button>
@@ -205,10 +205,10 @@ export const DailyGoalRing: React.FC = () => {
 
           {/* Center Info inside Ring */}
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-            <span className="text-2xl font-bold font-mono tracking-tight text-white">
+            <span className="text-2xl font-bold font-mono tracking-tight text-[var(--text-main)]">
               {progress.percentage}%
             </span>
-            <span className="text-[10px] uppercase tracking-wider text-white/50 font-semibold mt-0.5">
+            <span className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold mt-0.5">
               {progress.listenedMinutes} / {progress.goalMinutes}m
             </span>
           </div>
@@ -217,21 +217,21 @@ export const DailyGoalRing: React.FC = () => {
         {/* Goal Highlights & Streak Column */}
         <div className="flex-1 w-full space-y-3">
           <div className="grid grid-cols-2 gap-2.5">
-            <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 flex flex-col justify-between">
-              <div className="flex items-center justify-between text-white/40 text-[10px] uppercase font-semibold">
+            <div className="p-3 rounded-xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-[var(--text-dim)] text-[10px] uppercase font-semibold">
                 <span>Today's Audio</span>
-                <Headphones className="w-3.5 h-3.5 text-[#C5A059]" />
+                <Headphones className="w-3.5 h-3.5 text-[var(--accent)]" />
               </div>
               <div className="mt-1">
-                <span className="text-base font-bold font-mono text-white">
+                <span className="text-base font-bold font-mono text-[var(--text-main)]">
                   {progress.listenedMinutes}m
                 </span>
-                <span className="text-[11px] text-white/40 ml-1">logged</span>
+                <span className="text-[11px] text-[var(--text-dim)] ml-1">logged</span>
               </div>
             </div>
 
-            <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 flex flex-col justify-between">
-              <div className="flex items-center justify-between text-white/40 text-[10px] uppercase font-semibold">
+            <div className="p-3 rounded-xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-[var(--text-dim)] text-[10px] uppercase font-semibold">
                 <span>Daily Streak</span>
                 <Flame className="w-3.5 h-3.5 text-amber-400 fill-current" />
               </div>
@@ -244,9 +244,9 @@ export const DailyGoalRing: React.FC = () => {
           </div>
 
           {/* Progress Bar & Dynamic Motivational Message */}
-          <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5">
+          <div className="p-3 rounded-xl bg-[var(--surface-raised)] border border-[var(--border-subtle)]">
             <div className="flex items-center justify-between text-[11px] mb-1.5">
-              <span className="text-white/70 font-medium">
+              <span className="text-[var(--text-main)] font-medium">
                 {progress.isGoalAchieved ? (
                   <span className="text-emerald-400 font-semibold flex items-center gap-1">
                     <Sparkles className="w-3 h-3" /> Target Complete!
@@ -257,17 +257,17 @@ export const DailyGoalRing: React.FC = () => {
                   </span>
                 )}
               </span>
-              <span className="text-white/40 font-mono text-[10px]">
+              <span className="text-[var(--text-dim)] font-mono text-[10px]">
                 Target: {progress.goalMinutes} mins
               </span>
             </div>
 
-            <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+            <div className="w-full h-2 bg-[var(--surface-raised)] rounded-full overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all duration-700 ${
                   progress.isGoalAchieved
                     ? 'bg-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.5)]'
-                    : 'bg-[#C5A059] shadow-[0_0_12px_rgba(197,160,89,0.4)]'
+                    : 'bg-[var(--accent)] shadow-[0_0_12px_rgba(var(--accent-rgb),0.4)]'
                 }`}
                 style={{ width: `${progress.percentage}%` }}
               />

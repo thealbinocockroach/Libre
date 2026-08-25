@@ -248,6 +248,15 @@ export default function App() {
       }
     };
     refreshOfflineList();
+
+    // Refresh immediately whenever a download completes or an ebook is stored
+    const onOfflineUpdated = () => refreshOfflineList();
+    window.addEventListener('libriaudio_offline_updated', onOfflineUpdated);
+    window.addEventListener('libriaudio_ebooks_updated', onOfflineUpdated);
+    return () => {
+      window.removeEventListener('libriaudio_offline_updated', onOfflineUpdated);
+      window.removeEventListener('libriaudio_ebooks_updated', onOfflineUpdated);
+    };
   }, [playerState.currentBook]);
 
   // Sleep Timer Tick Effect
@@ -588,7 +597,7 @@ export default function App() {
     : false;
 
   return (
-    <div id="libriaudio-app-root" className="fixed inset-0 bg-[#070707] text-[#E0E0E0] flex flex-col font-sans overflow-hidden antialiased select-none">
+    <div id="libriaudio-app-root" className="fixed inset-0 bg-[var(--bg)] text-[var(--text-main)] flex flex-col font-sans overflow-hidden antialiased select-none">
       {/* Background Audio Engine */}
       <AudioEngine
         playerState={playerState}
@@ -655,7 +664,7 @@ export default function App() {
       {/* Top Universal App Navigation Bar */}
       <header
         id="app-top-header"
-        className="h-16 px-4 md:px-8 border-b border-white/[0.08] bg-[#0A0A0A] flex items-center justify-between shrink-0 z-20"
+        className="h-16 px-4 md:px-8 border-b border-[var(--border-subtle)] bg-[var(--bg)] flex items-center justify-between shrink-0 z-20"
       >
         {/* Brand Logo & Title (Headphone Gradient Logo) */}
         <div
@@ -665,10 +674,10 @@ export default function App() {
         >
           <AppLogo className="w-10 h-10 transition-transform group-hover:scale-105" />
           <div>
-            <h1 className="text-lg font-serif-display italic font-bold text-white tracking-wide group-hover:text-[#C5A059] transition-colors">
+            <h1 className="text-lg font-serif-display italic font-bold text-[var(--text-main)] tracking-wide group-hover:text-[var(--accent)] transition-colors">
               LibriAudio
             </h1>
-            <p className="text-[11px] text-white/50 hidden md:block">
+            <p className="text-[11px] text-[var(--text-dim)] hidden md:block">
               Audiobooks & Ebook Reader
             </p>
           </div>
@@ -680,7 +689,7 @@ export default function App() {
       </header>
 
       {/* Main Content Viewport */}
-      <main className="flex-1 relative overflow-hidden bg-[#070707] flex flex-col">
+      <main className="flex-1 relative overflow-hidden bg-[var(--bg)] flex flex-col">
         <div className="flex-1 overflow-y-auto">
           {isLoadingFeed ? (
             <Skeleton />
@@ -747,7 +756,7 @@ export default function App() {
         </div>
 
         {/* Persistent Bottom Mini Player Widget */}
-        <div className="shrink-0 bg-[#0C0C0C] border-t border-white/[0.08] px-4 md:px-8 py-2 z-20">
+        <div className="shrink-0 bg-[var(--surface)] border-t border-[var(--border-subtle)] px-4 md:px-8 py-2 z-20">
           <div className="max-w-6xl mx-auto">
             <MiniPlayerWidget
               playerState={playerState}
@@ -761,7 +770,7 @@ export default function App() {
         </div>
 
         {/* Sleek Bottom Navigation Bar (Explore, Search, Library, Stats, Settings) */}
-        <div className="shrink-0 bg-[#090909] border-t border-white/[0.08] z-20 w-full pb-[env(safe-area-inset-bottom)]">
+        <div className="shrink-0 bg-[var(--bg)] border-t border-[var(--border-subtle)] z-20 w-full pb-[env(safe-area-inset-bottom)]">
           <nav
             id="app-bottom-nav"
             className="h-14 flex items-center justify-around px-3 sm:px-8 max-w-xl mx-auto w-full"
@@ -771,8 +780,8 @@ export default function App() {
               onClick={() => setActiveTab('explore')}
               className={`flex items-center justify-center w-12 sm:w-14 h-10 rounded-2xl transition-all duration-200 ${
                 activeTab === 'explore'
-                  ? 'bg-[#C5A059] text-black shadow-lg shadow-[#C5A059]/20 scale-105'
-                  : 'text-white/40 hover:text-white hover:bg-white/[0.06]'
+                  ? 'bg-[var(--accent)] text-black shadow-lg shadow-[rgba(var(--accent-rgb),0.3)] scale-105'
+                  : 'text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
               }`}
               title="Explore"
               aria-label="Explore"
@@ -785,8 +794,8 @@ export default function App() {
               onClick={() => setActiveTab('search')}
               className={`flex items-center justify-center w-12 sm:w-14 h-10 rounded-2xl transition-all duration-200 ${
                 activeTab === 'search'
-                  ? 'bg-[#C5A059] text-black shadow-lg shadow-[#C5A059]/20 scale-105'
-                  : 'text-white/40 hover:text-white hover:bg-white/[0.06]'
+                  ? 'bg-[var(--accent)] text-black shadow-lg shadow-[rgba(var(--accent-rgb),0.3)] scale-105'
+                  : 'text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
               }`}
               title="Search"
               aria-label="Search"
@@ -799,8 +808,8 @@ export default function App() {
               onClick={() => setActiveTab('library')}
               className={`flex items-center justify-center w-12 sm:w-14 h-10 rounded-2xl transition-all duration-200 ${
                 activeTab === 'library'
-                  ? 'bg-[#C5A059] text-black shadow-lg shadow-[#C5A059]/20 scale-105'
-                  : 'text-white/40 hover:text-white hover:bg-white/[0.06]'
+                  ? 'bg-[var(--accent)] text-black shadow-lg shadow-[rgba(var(--accent-rgb),0.3)] scale-105'
+                  : 'text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
               }`}
               title="Library"
               aria-label="Library"
@@ -813,8 +822,8 @@ export default function App() {
               onClick={() => setActiveTab('stats')}
               className={`flex items-center justify-center w-12 sm:w-14 h-10 rounded-2xl transition-all duration-200 ${
                 activeTab === 'stats'
-                  ? 'bg-[#C5A059] text-black shadow-lg shadow-[#C5A059]/20 scale-105'
-                  : 'text-white/40 hover:text-white hover:bg-white/[0.06]'
+                  ? 'bg-[var(--accent)] text-black shadow-lg shadow-[rgba(var(--accent-rgb),0.3)] scale-105'
+                  : 'text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
               }`}
               title="Stats & Author Rankings"
               aria-label="Stats"
@@ -827,8 +836,8 @@ export default function App() {
               onClick={() => setActiveTab('settings')}
               className={`flex items-center justify-center w-12 sm:w-14 h-10 rounded-2xl transition-all duration-200 ${
                 activeTab === 'settings'
-                  ? 'bg-[#C5A059] text-black shadow-lg shadow-[#C5A059]/20 scale-105'
-                  : 'text-white/40 hover:text-white hover:bg-white/[0.06]'
+                  ? 'bg-[var(--accent)] text-black shadow-lg shadow-[rgba(var(--accent-rgb),0.3)] scale-105'
+                  : 'text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
               }`}
               title="Settings & Preferences"
               aria-label="Settings"

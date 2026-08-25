@@ -26,7 +26,7 @@ export function getDailyGoalMinutes(): number {
     const raw = localStorage.getItem(GOAL_STORAGE_KEY);
     if (raw) {
       const parsed = parseInt(raw, 10);
-      if (!isNaN(parsed) && parsed > 0 && parsed <= 720) {
+      if (Number.isFinite(parsed) && parsed > 0 && parsed <= 720) {
         return parsed;
       }
     }
@@ -59,17 +59,19 @@ export function getTodayGoalProgress(): DailyGoalProgress {
   const todayStr = new Date().toISOString().split('T')[0];
   const todayLog = summary.dailyLogs.find((l) => l.date === todayStr);
 
-  const listenedSeconds = todayLog?.listenedSeconds || 0;
-  const readSeconds = todayLog?.readSeconds || 0;
+  const listenedSeconds = Number.isFinite(todayLog?.listenedSeconds) ? todayLog!.listenedSeconds : 0;
+  const readSeconds = Number.isFinite(todayLog?.readSeconds) ? todayLog!.readSeconds : 0;
 
-  const listenedMinutes = parseFloat((listenedSeconds / 60).toFixed(1));
-  const readMinutes = parseFloat((readSeconds / 60).toFixed(1));
-  const totalMinutes = parseFloat(((listenedSeconds + readSeconds) / 60).toFixed(1));
+  const listenedMinutes = Number.isFinite(listenedSeconds / 60) ? parseFloat((listenedSeconds / 60).toFixed(1)) : 0;
+  const readMinutes = Number.isFinite(readSeconds / 60) ? parseFloat((readSeconds / 60).toFixed(1)) : 0;
+  const totalMinutes = Number.isFinite((listenedSeconds + readSeconds) / 60)
+    ? parseFloat(((listenedSeconds + readSeconds) / 60).toFixed(1))
+    : 0;
 
   const rawPercent = goalMinutes > 0 ? (listenedMinutes / goalMinutes) * 100 : 0;
-  const percentage = Math.min(100, Math.round(rawPercent));
+  const percentage = Math.min(100, Math.round(Number.isFinite(rawPercent) ? rawPercent : 0));
   const isGoalAchieved = listenedMinutes >= goalMinutes;
-  const remainingMinutes = Math.max(0, parseFloat((goalMinutes - listenedMinutes).toFixed(1)));
+  const remainingMinutes = Math.max(0, parseFloat((goalMinutes - listenedMinutes).toFixed(1)) || 0);
 
   return {
     goalMinutes,

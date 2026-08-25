@@ -170,11 +170,11 @@ export const CoverSyncBadge: React.FC<CoverSyncBadgeProps> = ({ syncInfo, size =
   // Cloud
   return (
     <div
-      className="absolute top-1 left-1 z-10 flex items-center gap-0.5 px-1 py-0.5 rounded-md bg-black/80 border border-white/15 text-white/60 backdrop-blur-sm shadow-sm"
+      className="absolute top-1 left-1 z-10 flex items-center gap-0.5 px-1 py-0.5 rounded-md bg-black/80 border border-[var(--border-subtle)] text-[var(--text-dim)] backdrop-blur-sm shadow-sm"
       title="Cloud Audio • Streams on demand"
     >
-      <Cloud className="w-2.5 h-2.5 text-white/50" />
-      {size === 'md' && <span className="text-[8px] font-mono tracking-tight text-white/50">Online</span>}
+      <Cloud className="w-2.5 h-2.5 text-[var(--text-dim)]" />
+      {size === 'md' && <span className="text-[8px] font-mono tracking-tight text-[var(--text-dim)]">Online</span>}
     </div>
   );
 };
@@ -227,7 +227,7 @@ export const InlineSyncBadge: React.FC<InlineSyncBadgeProps> = ({ syncInfo }) =>
 
   return (
     <span
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-white/[0.03] border border-white/10 text-white/40 text-[10px] font-mono font-medium shrink-0"
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-[var(--surface-raised)] border border-[var(--border-subtle)] text-[var(--text-dim)] text-[10px] font-mono font-medium shrink-0"
       title={description}
     >
       <Cloud className="w-2.5 h-2.5" />
@@ -252,17 +252,17 @@ export const SyncLegendBar: React.FC<SyncLegendBarProps> = ({ stats }) => {
   return (
     <div
       id="library-sync-legend-bar"
-      className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-white/[0.02] border border-white/[0.06] text-[11px] text-white/60 mb-4"
+      className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] text-[11px] text-[var(--text-dim)] mb-4"
     >
-      <div className="flex items-center gap-1.5 text-white/50 text-[10px] font-mono uppercase tracking-wider">
-        <HardDrive className="w-3 h-3 text-[#C5A059]" />
+      <div className="flex items-center gap-1.5 text-[var(--text-dim)] text-[10px] font-mono uppercase tracking-wider">
+        <HardDrive className="w-3 h-3 text-[var(--accent)]" />
         <span>Sync Status:</span>
       </div>
 
       <div className="flex items-center gap-3 flex-wrap text-[11px]">
         <div className="flex items-center gap-1.5 text-emerald-400" title="Full books stored locally in device storage">
           <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
-          <span className="font-medium text-white/80">Cached</span>
+          <span className="font-medium text-[var(--text-main)]">Cached</span>
           <span className="font-mono text-[10px] px-1 rounded bg-emerald-500/15 border border-emerald-500/20 text-emerald-300">
             {stats.cached}
           </span>
@@ -270,7 +270,7 @@ export const SyncLegendBar: React.FC<SyncLegendBarProps> = ({ stats }) => {
 
         <div className="flex items-center gap-1.5 text-amber-300" title="Partially downloaded audiobooks">
           <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
-          <span className="font-medium text-white/80">Partial</span>
+          <span className="font-medium text-[var(--text-main)]">Partial</span>
           <span className="font-mono text-[10px] px-1 rounded bg-amber-500/15 border border-amber-500/20 text-amber-300">
             {stats.partial}
           </span>
@@ -278,16 +278,16 @@ export const SyncLegendBar: React.FC<SyncLegendBarProps> = ({ stats }) => {
 
         <div className="flex items-center gap-1.5 text-sky-300" title="Currently streaming over network">
           <span className="w-2 h-2 rounded-full bg-sky-400 inline-block animate-pulse" />
-          <span className="font-medium text-white/80">Streaming</span>
+          <span className="font-medium text-[var(--text-main)]">Streaming</span>
           <span className="font-mono text-[10px] px-1 rounded bg-sky-500/15 border border-sky-500/20 text-sky-300">
             {stats.streaming}
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5 text-white/40" title="Stored in cloud catalog">
-          <span className="w-2 h-2 rounded-full bg-white/30 inline-block" />
-          <span className="font-medium text-white/60">Cloud</span>
-          <span className="font-mono text-[10px] px-1 rounded bg-white/10 text-white/50">
+        <div className="flex items-center gap-1.5 text-[var(--text-dim)]" title="Stored in cloud catalog">
+          <span className="w-2 h-2 rounded-full bg-[var(--surface-raised)] inline-block" />
+          <span className="font-medium text-[var(--text-dim)]">Cloud</span>
+          <span className="font-mono text-[10px] px-1 rounded bg-[var(--surface-raised)] text-[var(--text-dim)]">
             {stats.cloud}
           </span>
         </div>

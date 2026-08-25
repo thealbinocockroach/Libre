@@ -77,25 +77,25 @@ export const ApkExportModal: React.FC<ApkExportModalProps> = ({ isOpen, onClose 
     >
       <div
         id="apk-export-modal-dialog"
-        className="w-full max-w-2xl bg-[#0c0c0c] border border-white/15 rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[90vh]"
+        className="w-full max-w-2xl bg-[var(--surface)] border border-[var(--border-subtle)] rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="p-5 bg-[#111111] border-b border-white/10 flex items-center justify-between">
+        <div className="p-5 bg-[var(--surface)] border-b border-[var(--border-subtle)] flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#C5A059]/15 border border-[#C5A059]/30 flex items-center justify-center text-[#C5A059] shadow-inner">
+            <div className="w-10 h-10 rounded-xl bg-[var(--accent-dim)] border border-[var(--accent)] flex items-center justify-center text-[var(--accent)] shadow-inner">
               <Smartphone className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-base font-serif-display italic font-semibold text-white tracking-wide">
+                <h3 className="text-base font-serif-display italic font-semibold text-[var(--text-main)] tracking-wide">
                   Export Android APK & Project
                 </h3>
-                <span className="px-2 py-0.5 rounded-full text-[9px] uppercase tracking-wider font-semibold bg-[#C5A059]/15 text-[#C5A059] border border-[#C5A059]/30">
+                <span className="px-2 py-0.5 rounded-full text-[9px] uppercase tracking-wider font-semibold bg-[var(--accent-dim)] text-[var(--accent)] border border-[var(--accent)]">
                   Ready to Build
                 </span>
               </div>
-              <p className="text-xs text-[#888888]">
+              <p className="text-xs text-[var(--text-dim)]">
                 Download the complete Flutter source code and build your production APK in 1 command.
               </p>
             </div>
@@ -104,20 +104,20 @@ export const ApkExportModal: React.FC<ApkExportModalProps> = ({ isOpen, onClose 
           <button
             id="btn-close-apk-modal"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-colors"
+            className="p-1.5 rounded-lg text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)] transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center border-b border-white/10 bg-[#080808] px-5 gap-2 pt-2">
+        <div className="flex items-center border-b border-[var(--border-subtle)] bg-[var(--bg)] px-5 gap-2 pt-2">
           <button
             onClick={() => setActiveTab('zip')}
             className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium border-b-2 transition-all ${
               activeTab === 'zip'
-                ? 'border-[#C5A059] text-[#C5A059] font-semibold'
-                : 'border-transparent text-white/50 hover:text-white/80'
+                ? 'border-[var(--accent)] text-[var(--accent)] font-semibold'
+                : 'border-transparent text-[var(--text-dim)] hover:text-[var(--text-main)]'
             }`}
           >
             <Download className="w-3.5 h-3.5" />
@@ -127,8 +127,8 @@ export const ApkExportModal: React.FC<ApkExportModalProps> = ({ isOpen, onClose 
             onClick={() => setActiveTab('cli')}
             className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium border-b-2 transition-all ${
               activeTab === 'cli'
-                ? 'border-[#C5A059] text-[#C5A059] font-semibold'
-                : 'border-transparent text-white/50 hover:text-white/80'
+                ? 'border-[var(--accent)] text-[var(--accent)] font-semibold'
+                : 'border-transparent text-[var(--text-dim)] hover:text-[var(--text-main)]'
             }`}
           >
             <Terminal className="w-3.5 h-3.5" />
@@ -138,8 +138,8 @@ export const ApkExportModal: React.FC<ApkExportModalProps> = ({ isOpen, onClose 
             onClick={() => setActiveTab('github')}
             className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium border-b-2 transition-all ${
               activeTab === 'github'
-                ? 'border-[#C5A059] text-[#C5A059] font-semibold'
-                : 'border-transparent text-white/50 hover:text-white/80'
+                ? 'border-[var(--accent)] text-[var(--accent)] font-semibold'
+                : 'border-transparent text-[var(--text-dim)] hover:text-[var(--text-main)]'
             }`}
           >
             <Github className="w-3.5 h-3.5" />
@@ -149,8 +149,8 @@ export const ApkExportModal: React.FC<ApkExportModalProps> = ({ isOpen, onClose 
             onClick={() => setActiveTab('install')}
             className={`flex items-center gap-2 px-3.5 py-2.5 text-xs font-medium border-b-2 transition-all ${
               activeTab === 'install'
-                ? 'border-[#C5A059] text-[#C5A059] font-semibold'
-                : 'border-transparent text-white/50 hover:text-white/80'
+                ? 'border-[var(--accent)] text-[var(--accent)] font-semibold'
+                : 'border-transparent text-[var(--text-dim)] hover:text-[var(--text-main)]'
             }`}
           >
             <ShieldCheck className="w-3.5 h-3.5" />
@@ -159,30 +159,30 @@ export const ApkExportModal: React.FC<ApkExportModalProps> = ({ isOpen, onClose 
         </div>
 
         {/* Modal Body Content */}
-        <div className="p-6 overflow-y-auto space-y-4 text-xs text-[#EFEFEF]">
+        <div className="p-6 overflow-y-auto space-y-4 text-xs text-[var(--text-main)]">
           {activeTab === 'zip' && (
             <div className="space-y-4">
-              <div className="p-4 rounded-xl bg-white/[0.03] border border-[#C5A059]/25 flex items-start gap-3">
-                <div className="p-2 rounded-lg bg-[#C5A059]/10 text-[#C5A059] shrink-0">
+              <div className="p-4 rounded-xl bg-[var(--surface-raised)] border border-[var(--accent-dim)] flex items-start gap-3">
+                <div className="p-2 rounded-lg bg-[var(--accent-dim)] text-[var(--accent)] shrink-0">
                   <Package className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="font-serif-display italic font-semibold text-white text-sm">
+                  <h4 className="font-serif-display italic font-semibold text-[var(--text-main)] text-sm">
                     Complete Android Flutter Codebase Package
                   </h4>
-                  <p className="text-white/60 text-[11px] mt-1 leading-relaxed">
+                  <p className="text-[var(--text-dim)] text-[11px] mt-1 leading-relaxed">
                     This archive contains all 17 Flutter & Android source files, Gradle configuration, AudioService background manifest permissions, Riverpod state managers, Dio REST integration, and GitHub Actions APK build workflows.
                   </p>
                 </div>
               </div>
 
               {/* Main Download Button */}
-              <div className="flex flex-col items-center justify-center p-6 rounded-xl bg-[#111111] border border-white/10 text-center space-y-3">
+              <div className="flex flex-col items-center justify-center p-6 rounded-xl bg-[var(--surface)] border border-[var(--border-subtle)] text-center space-y-3">
                 <button
                   id="btn-download-project-zip"
                   onClick={handleDownloadZip}
                   disabled={isZipping}
-                  className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#C5A059] hover:bg-[#d4af65] text-black font-semibold text-xs transition-all shadow-[0_0_20px_rgba(197,160,89,0.35)] flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+                  className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black font-semibold text-xs transition-all shadow-[0_0_20px_rgba(var(--accent-rgb),0.35)] flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
                 >
                   {isZipping ? (
                     <>
@@ -201,27 +201,27 @@ export const ApkExportModal: React.FC<ApkExportModalProps> = ({ isOpen, onClose 
                     </>
                   )}
                 </button>
-                <p className="text-[10px] text-white/40">
-                  Includes all files: <code className="text-[#C5A059]">pubspec.yaml</code>, <code className="text-[#C5A059]">AndroidManifest.xml</code>, <code className="text-[#C5A059]">lib/</code>, and <code className="text-[#C5A059]">.github/workflows</code>
+                <p className="text-[10px] text-[var(--text-dim)]">
+                  Includes all files: <code className="text-[var(--accent)]">pubspec.yaml</code>, <code className="text-[var(--accent)]">AndroidManifest.xml</code>, <code className="text-[var(--accent)]">lib/</code>, and <code className="text-[var(--accent)]">.github/workflows</code>
                 </p>
               </div>
 
               {/* Quick 3-Step Summary */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
-                <div className="p-3 rounded-xl bg-[#111111] border border-white/10 space-y-1">
-                  <div className="text-[#C5A059] font-mono text-[10px] font-bold">STEP 1</div>
-                  <div className="text-white font-medium text-xs">Extract ZIP</div>
-                  <p className="text-white/50 text-[10px]">Unzip on your computer or Android Studio workspace.</p>
+                <div className="p-3 rounded-xl bg-[var(--surface)] border border-[var(--border-subtle)] space-y-1">
+                  <div className="text-[var(--accent)] font-mono text-[10px] font-bold">STEP 1</div>
+                  <div className="text-[var(--text-main)] font-medium text-xs">Extract ZIP</div>
+                  <p className="text-[var(--text-dim)] text-[10px]">Unzip on your computer or Android Studio workspace.</p>
                 </div>
-                <div className="p-3 rounded-xl bg-[#111111] border border-white/10 space-y-1">
-                  <div className="text-[#C5A059] font-mono text-[10px] font-bold">STEP 2</div>
-                  <div className="text-white font-medium text-xs">Run Build Command</div>
-                  <p className="text-white/50 text-[10px]">Run <code className="text-[#C5A059]">flutter build apk --release</code>.</p>
+                <div className="p-3 rounded-xl bg-[var(--surface)] border border-[var(--border-subtle)] space-y-1">
+                  <div className="text-[var(--accent)] font-mono text-[10px] font-bold">STEP 2</div>
+                  <div className="text-[var(--text-main)] font-medium text-xs">Run Build Command</div>
+                  <p className="text-[var(--text-dim)] text-[10px]">Run <code className="text-[var(--accent)]">flutter build apk --release</code>.</p>
                 </div>
-                <div className="p-3 rounded-xl bg-[#111111] border border-white/10 space-y-1">
-                  <div className="text-[#C5A059] font-mono text-[10px] font-bold">STEP 3</div>
-                  <div className="text-white font-medium text-xs">Install APK</div>
-                  <p className="text-white/50 text-[10px]">Transfer <code className="text-[#C5A059]">app-release.apk</code> to your phone.</p>
+                <div className="p-3 rounded-xl bg-[var(--surface)] border border-[var(--border-subtle)] space-y-1">
+                  <div className="text-[var(--accent)] font-mono text-[10px] font-bold">STEP 3</div>
+                  <div className="text-[var(--text-main)] font-medium text-xs">Install APK</div>
+                  <p className="text-[var(--text-dim)] text-[10px]">Transfer <code className="text-[var(--accent)]">app-release.apk</code> to your phone.</p>
                 </div>
               </div>
             </div>
@@ -229,60 +229,60 @@ export const ApkExportModal: React.FC<ApkExportModalProps> = ({ isOpen, onClose 
 
           {activeTab === 'cli' && (
             <div className="space-y-4">
-              <p className="text-white/70 leading-relaxed">
+              <p className="text-[var(--text-main)] leading-relaxed">
                 If you have the <strong>Flutter SDK</strong> installed on your computer, open your terminal inside the extracted project folder and run the following commands:
               </p>
 
               {/* Code Snippet 1 */}
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-[11px] text-white/60">
+                <div className="flex items-center justify-between text-[11px] text-[var(--text-dim)]">
                   <span className="font-mono">1. Fetch packages</span>
                   <button
                     onClick={() => copyCode('flutter pub get', 1)}
-                    className="flex items-center gap-1 text-[#C5A059] hover:underline"
+                    className="flex items-center gap-1 text-[var(--accent)] hover:underline"
                   >
                     {copiedIndex === 1 ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                     {copiedIndex === 1 ? 'Copied' : 'Copy'}
                   </button>
                 </div>
-                <pre className="p-3 rounded-xl bg-[#080808] border border-white/10 font-mono text-xs text-white/90 overflow-x-auto">
+                <pre className="p-3 rounded-xl bg-[var(--bg)] border border-[var(--border-subtle)] font-mono text-xs text-[var(--text-main)] overflow-x-auto">
                   flutter pub get
                 </pre>
               </div>
 
               {/* Code Snippet 2 */}
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-[11px] text-white/60">
+                <div className="flex items-center justify-between text-[11px] text-[var(--text-dim)]">
                   <span className="font-mono">2. Build standalone Universal Release APK</span>
                   <button
                     onClick={() => copyCode('flutter build apk --release', 2)}
-                    className="flex items-center gap-1 text-[#C5A059] hover:underline"
+                    className="flex items-center gap-1 text-[var(--accent)] hover:underline"
                   >
                     {copiedIndex === 2 ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                     {copiedIndex === 2 ? 'Copied' : 'Copy'}
                   </button>
                 </div>
-                <pre className="p-3 rounded-xl bg-[#080808] border border-white/10 font-mono text-xs text-[#C5A059] overflow-x-auto">
+                <pre className="p-3 rounded-xl bg-[var(--bg)] border border-[var(--border-subtle)] font-mono text-xs text-[var(--accent)] overflow-x-auto">
                   flutter build apk --release
                 </pre>
-                <p className="text-[10px] text-white/40">
-                  APK Output file location: <code className="text-white/80">build/app/outputs/flutter-apk/app-release.apk</code>
+                <p className="text-[10px] text-[var(--text-dim)]">
+                  APK Output file location: <code className="text-[var(--text-main)]">build/app/outputs/flutter-apk/app-release.apk</code>
                 </p>
               </div>
 
               {/* Code Snippet 3 */}
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-[11px] text-white/60">
+                <div className="flex items-center justify-between text-[11px] text-[var(--text-dim)]">
                   <span className="font-mono">3. (Optional) Run directly on plugged-in Android device</span>
                   <button
                     onClick={() => copyCode('flutter run -d android --release', 3)}
-                    className="flex items-center gap-1 text-[#C5A059] hover:underline"
+                    className="flex items-center gap-1 text-[var(--accent)] hover:underline"
                   >
                     {copiedIndex === 3 ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                     {copiedIndex === 3 ? 'Copied' : 'Copy'}
                   </button>
                 </div>
-                <pre className="p-3 rounded-xl bg-[#080808] border border-white/10 font-mono text-xs text-white/90 overflow-x-auto">
+                <pre className="p-3 rounded-xl bg-[var(--bg)] border border-[var(--border-subtle)] font-mono text-xs text-[var(--text-main)] overflow-x-auto">
                   flutter run -d android --release
                 </pre>
               </div>
@@ -291,23 +291,23 @@ export const ApkExportModal: React.FC<ApkExportModalProps> = ({ isOpen, onClose 
 
           {activeTab === 'github' && (
             <div className="space-y-4">
-              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/10 flex items-start gap-3">
-                <Github className="w-5 h-5 text-white shrink-0 mt-0.5" />
+              <div className="p-3.5 rounded-xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] flex items-start gap-3">
+                <Github className="w-5 h-5 text-[var(--text-main)] shrink-0 mt-0.5" />
                 <div>
-                  <h4 className="font-medium text-white text-xs">Zero-Setup Cloud APK Generation</h4>
-                  <p className="text-white/60 text-[11px] mt-0.5 leading-relaxed">
-                    You do not even need Flutter installed locally! The included <code className="text-[#C5A059]">.github/workflows/build_apk.yml</code> file allows GitHub to build the Android APK in the cloud for free.
+                  <h4 className="font-medium text-[var(--text-main)] text-xs">Zero-Setup Cloud APK Generation</h4>
+                  <p className="text-[var(--text-dim)] text-[11px] mt-0.5 leading-relaxed">
+                    You do not even need Flutter installed locally! The included <code className="text-[var(--accent)]">.github/workflows/build_apk.yml</code> file allows GitHub to build the Android APK in the cloud for free.
                   </p>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <h5 className="font-semibold text-white text-xs">How it works:</h5>
-                <ol className="list-decimal list-inside space-y-1.5 text-white/70 text-[11px]">
+                <h5 className="font-semibold text-[var(--text-main)] text-xs">How it works:</h5>
+                <ol className="list-decimal list-inside space-y-1.5 text-[var(--text-main)] text-[11px]">
                   <li>Download the project ZIP and push it to a new GitHub repository.</li>
                   <li>Go to your GitHub repository &rarr; click the <strong>Actions</strong> tab.</li>
                   <li>GitHub automatically runs the <strong>Build Android APK</strong> workflow on Ubuntu runners.</li>
-                  <li>When completed (under 2 minutes), download the compiled <code className="text-[#C5A059]">app-release.apk</code> directly from the Artifacts section!</li>
+                  <li>When completed (under 2 minutes), download the compiled <code className="text-[var(--accent)]">app-release.apk</code> directly from the Artifacts section!</li>
                 </ol>
               </div>
             </div>
@@ -315,25 +315,25 @@ export const ApkExportModal: React.FC<ApkExportModalProps> = ({ isOpen, onClose 
 
           {activeTab === 'install' && (
             <div className="space-y-4">
-              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/10 space-y-2">
-                <h4 className="font-semibold text-white text-xs flex items-center gap-2">
-                  <Zap className="w-3.5 h-3.5 text-[#C5A059]" />
+              <div className="p-3.5 rounded-xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] space-y-2">
+                <h4 className="font-semibold text-[var(--text-main)] text-xs flex items-center gap-2">
+                  <Zap className="w-3.5 h-3.5 text-[var(--accent)]" />
                   Installing the APK onto your Android phone
                 </h4>
-                <p className="text-white/70 text-[11px] leading-relaxed">
-                  Once you have the <code className="text-[#C5A059]">app-release.apk</code> file:
+                <p className="text-[var(--text-main)] text-[11px] leading-relaxed">
+                  Once you have the <code className="text-[var(--accent)]">app-release.apk</code> file:
                 </p>
-                <ul className="space-y-2 text-[11px] text-white/70">
+                <ul className="space-y-2 text-[11px] text-[var(--text-main)]">
                   <li className="flex items-start gap-2">
-                    <span className="text-[#C5A059] font-bold">1.</span>
-                    <span><strong>Direct Transfer:</strong> Send the <code className="text-white">app-release.apk</code> file to your phone via Google Drive, WhatsApp, Telegram, or USB cable.</span>
+                    <span className="text-[var(--accent)] font-bold">1.</span>
+                    <span><strong>Direct Transfer:</strong> Send the <code className="text-[var(--text-main)]">app-release.apk</code> file to your phone via Google Drive, WhatsApp, Telegram, or USB cable.</span>
                   </li>
                   <li className="flex items-start gap-2">
-                    <span className="text-[#C5A059] font-bold">2.</span>
+                    <span className="text-[var(--accent)] font-bold">2.</span>
                     <span><strong>Allow Unknown Apps:</strong> Tap the APK on your phone. If prompted, toggle on &ldquo;Allow from this source&rdquo; to install the standalone application.</span>
                   </li>
                   <li className="flex items-start gap-2">
-                    <span className="text-[#C5A059] font-bold">3.</span>
+                    <span className="text-[var(--accent)] font-bold">3.</span>
                     <span><strong>Enjoy Background Audio:</strong> LibriAudio will run seamlessly with system lock-screen media notifications and headphone controls enabled.</span>
                   </li>
                 </ul>
@@ -343,21 +343,21 @@ export const ApkExportModal: React.FC<ApkExportModalProps> = ({ isOpen, onClose 
         </div>
 
         {/* Modal Footer */}
-        <div className="p-4 bg-[#111111] border-t border-white/10 flex items-center justify-between">
-          <span className="text-[11px] text-white/40 font-mono">
-            Package: <span className="text-white/70">com.libriaudio.app</span>
+        <div className="p-4 bg-[var(--surface)] border-t border-[var(--border-subtle)] flex items-center justify-between">
+          <span className="text-[11px] text-[var(--text-dim)] font-mono">
+            Package: <span className="text-[var(--text-main)]">com.libriaudio.app</span>
           </span>
 
           <div className="flex items-center gap-2">
             <button
               onClick={onClose}
-              className="px-3.5 py-1.5 rounded-lg text-xs font-medium text-white/60 hover:text-white hover:bg-white/5 transition-all"
+              className="px-3.5 py-1.5 rounded-lg text-xs font-medium text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)] transition-all"
             >
               Close
             </button>
             <button
               onClick={handleDownloadZip}
-              className="px-4 py-1.5 rounded-lg bg-[#C5A059] hover:bg-[#d4af65] text-black font-semibold text-xs transition-all shadow-[0_0_12px_rgba(197,160,89,0.3)] flex items-center gap-1.5 active:scale-95"
+              className="px-4 py-1.5 rounded-lg bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black font-semibold text-xs transition-all shadow-[0_0_12px_rgba(var(--accent-rgb),0.3)] flex items-center gap-1.5 active:scale-95"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Download Project ZIP</span>

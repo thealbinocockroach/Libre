@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { PlayerState } from '../types';
 import { getOfflineAudioTrackUrl } from '../utils/offlineStorage';
+import MediaNotification, { MediaNotificationAction } from '../utils/mediaNotification';
 
 interface AudioEngineProps {
   playerState: PlayerState;
@@ -65,6 +66,20 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
   // Keep refs fresh for closure-safe callbacks
   trackRef.current = playerState.currentTrack;
   bookRef.current = playerState.currentBook;
+
+  // Refs for native media-notification action handlers (avoid stale closures)
+  const onPlayRef = useRef(onPlay);
+  const onPauseRef = useRef(onPause);
+  const onSkipNextRef = useRef(onSkipNext);
+  const onSkipPreviousRef = useRef(onSkipPrevious);
+  onPlayRef.current = onPlay;
+  onPauseRef.current = onPause;
+  onSkipNextRef.current = onSkipNext;
+  onSkipPreviousRef.current = onSkipPrevious;
+
+  const isNativePlatform = (): boolean =>
+    typeof (window as any).Capacitor?.isNativePlatform === 'function' &&
+    !!(window as any).Capacitor?.isNativePlatform?.();
 
   const cleanupBlobUrl = useCallback(() => {
     if (blobUrlRef.current) {
@@ -460,12 +475,94 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
     return () => clearInterval(interval);
   }, [playerState.isPlaying, playerState.currentTime, playerState.duration, playerState.playbackSpeed]);
 
+  // --- Native Android media notification (persistent lock-screen + shade) ---
+  // Listen for transport actions from the native MediaNotification plugin and
+  // route them to the same handlers used by the web Media Session API.
+  useEffect(() => {
+    if (!isNativePlatform()) return;
+    let remove: (() => void) | undefined;
+
+    MediaNotification.addListener('mediaNotificationAction', (e: MediaNotificationAction) => {
+      const action = e?.action;
+      if (action === 'play') onPlayRef.current();
+      else if (action === 'pause') onPauseRef.current();
+      else if (action === 'next') onSkipNextRef.current();
+      else if (action === 'previous') onSkipPreviousRef.current();
+      else if (action === 'seek' && typeof e.position === 'number') {
+        const audio = audioRef.current;
+        if (audio) audio.currentTime = e.position / 1000;
+      }
+    }).then((handle: { remove: () => void }) => {
+      remove = () => handle.remove();
+    }).catch(() => {});
+
+    return () => {
+      remove?.();
+    };
+  }, []);
+
+  // Push current track metadata + playback state to the native notification
+  // whenever the book, track, or play/pause state changes.
+  useEffect(() => {
+    if (!isNativePlatform()) return;
+    const book = playerState.currentBook;
+    const track = playerState.currentTrack;
+    if (!book) return;
+
+    const push = () => {
+      MediaNotification.update({
+        title: track?.title || book.title,
+        artist: book.author || 'Unknown Author',
+        album: book.title,
+        artworkUrl: book.coverImageUrl || '',
+        isPlaying: playerState.isPlaying,
+        position: audioRef.current?.currentTime || playerState.currentTime || 0,
+        duration: audioRef.current?.duration || playerState.duration || 0,
+      });
+    };
+
+    if (playerState.isPlaying) {
+      MediaNotification.show()
+        .then(push)
+        .catch(() => push());
+    } else {
+      push();
+    }
+  }, [
+    playerState.currentBook?.id,
+    playerState.currentTrack?.id,
+    playerState.isPlaying,
+  ]);
+
+  // Keep the native notification's progress position fresh while playing.
+  useEffect(() => {
+    if (!isNativePlatform() || !playerState.isPlaying) return;
+    const id = setInterval(() => {
+      const book = bookRef.current;
+      const track = trackRef.current;
+      if (!book) return;
+      MediaNotification.update({
+        title: track?.title || book.title,
+        artist: book.author || 'Unknown Author',
+        album: book.title,
+        artworkUrl: book.coverImageUrl || '',
+        isPlaying: true,
+        position: audioRef.current?.currentTime || 0,
+        duration: audioRef.current?.duration || 0,
+      });
+    }, 5000);
+    return () => clearInterval(id);
+  }, [playerState.isPlaying]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
       cleanupBlobUrl();
       if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
+      if (isNativePlatform()) {
+        MediaNotification.hide().catch(() => {});
+      }
     };
   }, [cleanupBlobUrl]);
 

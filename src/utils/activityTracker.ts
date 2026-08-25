@@ -40,18 +40,76 @@ function getTodayKey(): string {
   return now.toISOString().split('T')[0];
 }
 
+function sanitizeNumber(value: unknown, fallback = 0): number {
+  const n = typeof value === 'number' ? value : parseFloat(String(value));
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+function sanitizeBookActivity(raw: any): BookActivity | null {
+  if (!raw || typeof raw !== 'object' || !raw.bookId) return null;
+  return {
+    bookId: String(raw.bookId),
+    bookTitle: String(raw.bookTitle || 'Unknown Title'),
+    bookAuthor: String(raw.bookAuthor || 'Unknown Author'),
+    coverImageUrl: raw.coverImageUrl ? String(raw.coverImageUrl) : undefined,
+    trueListenedSeconds: sanitizeNumber(raw.trueListenedSeconds),
+    trueReadSeconds: sanitizeNumber(raw.trueReadSeconds),
+    firstInteractedAt: sanitizeNumber(raw.firstInteractedAt, Date.now()),
+    lastInteractedAt: sanitizeNumber(raw.lastInteractedAt, Date.now()),
+    lastListenTimestamp: raw.lastListenTimestamp ? sanitizeNumber(raw.lastListenTimestamp) : undefined,
+    lastReadTimestamp: raw.lastReadTimestamp ? sanitizeNumber(raw.lastReadTimestamp) : undefined,
+    currentTrackIndex: raw.currentTrackIndex,
+    currentTrackTitle: raw.currentTrackTitle,
+    currentAudioTime: raw.currentAudioTime,
+    lastReadChapterIndex: raw.lastReadChapterIndex,
+    lastReadChapterTitle: raw.lastReadChapterTitle,
+    lastScrollPercentage: raw.lastScrollPercentage,
+    totalChapters: raw.totalChapters,
+  };
+}
+
 function loadActivityDb(): ActivityDatabase {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     const rawSessions = localStorage.getItem(SESSIONS_STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : {};
-    const sessions = rawSessions ? JSON.parse(rawSessions) : [];
 
-    return {
-      books: parsed.books || {},
-      dailyLogs: parsed.dailyLogs || {},
-      readingSessions: Array.isArray(sessions) ? sessions : [],
-    };
+    let parsed: any = {};
+    try {
+      parsed = raw ? JSON.parse(raw) : {};
+    } catch {
+      parsed = {};
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) parsed = {};
+
+    const rawBooks = parsed.books && typeof parsed.books === 'object' ? parsed.books : {};
+    const books: Record<string, BookActivity> = {};
+    Object.keys(rawBooks).forEach((k) => {
+      const sanitized = sanitizeBookActivity(rawBooks[k]);
+      if (sanitized) books[k] = sanitized;
+    });
+
+    const rawLogs = parsed.dailyLogs && typeof parsed.dailyLogs === 'object' ? parsed.dailyLogs : {};
+    const dailyLogs: Record<string, DailyActivityLog> = {};
+    Object.keys(rawLogs).forEach((k) => {
+      const l = rawLogs[k];
+      if (l && typeof l === 'object') {
+        dailyLogs[k] = {
+          date: String(l.date || k),
+          listenedSeconds: sanitizeNumber(l.listenedSeconds),
+          readSeconds: sanitizeNumber(l.readSeconds),
+        };
+      }
+    });
+
+    let sessions: any[] = [];
+    try {
+      const parsedSessions = rawSessions ? JSON.parse(rawSessions) : [];
+      sessions = Array.isArray(parsedSessions) ? parsedSessions : [];
+    } catch {
+      sessions = [];
+    }
+
+    return { books, dailyLogs, readingSessions: sessions };
   } catch (e) {
     console.warn('Failed to load activity db:', e);
   }
@@ -61,43 +119,37 @@ function loadActivityDb(): ActivityDatabase {
 let memoryDb: ActivityDatabase = loadActivityDb();
 let dirty = false;
 
+function persistNow(): void {
+  try {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ books: memoryDb.books, dailyLogs: memoryDb.dailyLogs })
+    );
+    localStorage.setItem(
+      SESSIONS_STORAGE_KEY,
+      JSON.stringify(memoryDb.readingSessions || [])
+    );
+    dirty = false;
+  } catch (e) {
+    console.warn('Failed to save activity db:', e);
+  }
+}
+
 // Periodic flush to LocalStorage
 if (typeof window !== 'undefined') {
   setInterval(() => {
-    if (dirty) {
-      try {
-        localStorage.setItem(
-          STORAGE_KEY,
-          JSON.stringify({ books: memoryDb.books, dailyLogs: memoryDb.dailyLogs })
-        );
-        localStorage.setItem(
-          SESSIONS_STORAGE_KEY,
-          JSON.stringify(memoryDb.readingSessions || [])
-        );
-        dirty = false;
-      } catch (e) {
-        console.warn('Failed to save activity db:', e);
-      }
-    }
+    if (dirty) persistNow();
   }, 2000);
 
   window.addEventListener('beforeunload', () => {
-    if (dirty) {
-      try {
-        localStorage.setItem(
-          STORAGE_KEY,
-          JSON.stringify({ books: memoryDb.books, dailyLogs: memoryDb.dailyLogs })
-        );
-        localStorage.setItem(
-          SESSIONS_STORAGE_KEY,
-          JSON.stringify(memoryDb.readingSessions || [])
-        );
-        dirty = false;
-      } catch (e) {
-        console.warn('Failed to save activity db on exit:', e);
-      }
-    }
+    if (dirty) persistNow();
   });
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden' && dirty) persistNow();
+    });
+  }
 }
 
 /**
@@ -140,6 +192,7 @@ export function recordReadingSession(
   }
 
   dirty = true;
+  persistNow();
 
   if (typeof window !== 'undefined') {
     window.dispatchEvent(
@@ -165,6 +218,7 @@ export function getReadingSessions(): ReadingSessionRecord[] {
 export function clearReadingHistory(): void {
   memoryDb.readingSessions = [];
   dirty = true;
+  persistNow();
   try {
     localStorage.removeItem(SESSIONS_STORAGE_KEY);
   } catch (e) {
@@ -181,6 +235,7 @@ export function clearReadingHistory(): void {
 export function deleteReadingSession(sessionId: string): void {
   memoryDb.readingSessions = (memoryDb.readingSessions || []).filter((s) => s.id !== sessionId);
   dirty = true;
+  persistNow();
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('libriaudio_reading_updated'));
   }
@@ -203,7 +258,7 @@ export function recordTrueListeningTime(
   trackTitle?: string,
   audioCurrentTime?: number
 ): void {
-  if (!book || seconds <= 0) return;
+  if (!book || !Number.isFinite(seconds) || seconds <= 0) return;
   const now = Date.now();
   const today = getTodayKey();
 
@@ -237,6 +292,7 @@ export function recordTrueListeningTime(
   memoryDb.dailyLogs[today].listenedSeconds += seconds;
 
   dirty = true;
+  persistNow();
 }
 
 /**
@@ -249,7 +305,7 @@ export function recordTrueReadingTime(
   chapterTitle?: string,
   scrollPercentage?: number
 ): void {
-  if (!book || seconds <= 0) return;
+  if (!book || !Number.isFinite(seconds) || seconds <= 0) return;
   const now = Date.now();
   const today = getTodayKey();
 
@@ -283,6 +339,7 @@ export function recordTrueReadingTime(
   memoryDb.dailyLogs[today].readSeconds += seconds;
 
   dirty = true;
+  persistNow();
 
   if (typeof window !== 'undefined') {
     window.dispatchEvent(
@@ -319,8 +376,8 @@ export function getOverallActivitySummary(): {
   dailyLogs: DailyActivityLog[];
 } {
   const books = Object.values(memoryDb.books);
-  const totalListenedSeconds = books.reduce((acc, b) => acc + (b.trueListenedSeconds || 0), 0);
-  const totalReadSeconds = books.reduce((acc, b) => acc + (b.trueReadSeconds || 0), 0);
+  const totalListenedSeconds = books.reduce((acc, b) => acc + sanitizeNumber(b.trueListenedSeconds), 0);
+  const totalReadSeconds = books.reduce((acc, b) => acc + sanitizeNumber(b.trueReadSeconds), 0);
   const totalCombinedSeconds = totalListenedSeconds + totalReadSeconds;
 
   // Calculate day streak

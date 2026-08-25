@@ -145,6 +145,96 @@ export function mapArchiveDocToAudiobook(doc: any): Audiobook {
   };
 }
 
+const RELATED_STOP_WORDS = new Set([
+  'the', 'and', 'for', 'with', 'from', 'that', 'this', 'into', 'your', 'have', 'been',
+  'were', 'they', 'their', 'about', 'which', 'when', 'what', 'there', 'here', 'them',
+  'then', 'than', 'will', 'would', 'could', 'should', 'audiobook', 'classic', 'public',
+  'domain', 'unabridged', 'story', 'stories', 'tale', 'tales', 'chapter', 'chapters',
+  'book', 'books', 'novel', 'volume', 'volumes', 'part', 'edition', 'complete', 'works',
+  'first', 'second', 'third', 'last', 'new', 'old', 'great', 'little', 'young', 'life',
+]);
+
+export interface ContinueListeningResult {
+  book: Audiobook;
+  positionSecs: number;
+  totalSecs: number;
+  progress: number;
+}
+
+export function getContinueListeningBook(
+  currentBook: Audiobook | null,
+  history: Audiobook[]
+): ContinueListeningResult | null {
+  const derive = (book: Audiobook, positionSecs: number): ContinueListeningResult => {
+    const totalSecs = book.totalTimeSecs || 1;
+    const progress = Math.max(0, Math.min(1, positionSecs / totalSecs));
+    return { book, positionSecs, totalSecs, progress };
+  };
+
+  if (currentBook) {
+    return derive(currentBook, currentBook.lastPlayedPositionSecs ?? 0);
+  }
+
+  const progressed = history
+    .map((b) => ({ b, pos: b.lastPlayedPositionSecs ?? 0 }))
+    .filter((x) => x.pos > 0)
+    .sort((a, b) => b.pos - a.pos);
+
+  if (progressed.length > 0) {
+    return derive(progressed[0].b, progressed[0].pos);
+  }
+
+  if (history.length > 0) {
+    return derive(history[0], 0);
+  }
+
+  return null;
+}
+
+export function getRelatedFromCatalog(
+  seed: Audiobook,
+  pool: Audiobook[],
+  limit = 10
+): Audiobook[] {
+  const seedAuthor = seed.author.toLowerCase();
+  const seedAuthorLast = seedAuthor.split(' ').filter(Boolean).slice(-1)[0] || '';
+
+  const seedWords = new Set(
+    `${seed.title} ${seed.description}`
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 4 && !RELATED_STOP_WORDS.has(w))
+  );
+
+  const scored = pool
+    .filter((b) => b.id !== seed.id)
+    .map((b) => {
+      let score = 0;
+      const authorLower = b.author.toLowerCase();
+      if (authorLower === seedAuthor) score += 6;
+      else if (seedAuthorLast && authorLower.includes(seedAuthorLast)) score += 3;
+
+      const haystack = `${b.title} ${b.description}`.toLowerCase();
+      seedWords.forEach((w) => {
+        if (haystack.includes(w)) score += 1;
+      });
+      return { b, score };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  const related = scored.map((x) => x.b);
+  if (related.length > 0) return related.slice(0, limit);
+  return pool.filter((b) => b.id !== seed.id).slice(0, limit);
+}
+
+export function pickHistorySeed(history: Audiobook[], excludeId?: string): Audiobook | null {
+  if (history.length === 0) return null;
+  const candidates = excludeId ? history.filter((b) => b.id !== excludeId) : history;
+  return (candidates.length > 0 ? candidates : history)[0];
+}
+
 // Fetch dynamic recommendations from Internet Archive LibriVox collection
 export async function fetchLibriVoxCategory(query: string, rows: number = 8): Promise<Audiobook[]> {
   try {

@@ -322,25 +322,25 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
         <div
           id="full-player-modal"
           onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-lg bg-[#0E0E0E] border border-white/10 rounded-3xl p-5 sm:p-7 text-[#EFEFEF] shadow-2xl overflow-hidden flex flex-col justify-between max-h-[94vh]"
+          className="relative w-full max-w-lg bg-[var(--surface)] border border-[var(--border-subtle)] rounded-3xl p-5 sm:p-7 text-[var(--text-main)] shadow-2xl overflow-hidden flex flex-col justify-between max-h-[94vh]"
         >
           {/* Ambient background glow */}
-          <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 bg-[#C5A059]/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 bg-[var(--accent-dim)] rounded-full blur-3xl pointer-events-none" />
 
           {/* Top Action Bar */}
           <div id="player-top-bar" className="relative flex items-center justify-between z-10">
             <button
               id="btn-dismiss-player"
               onClick={onClose}
-              className="w-9 h-9 flex items-center justify-center rounded-full text-white/60 hover:text-white hover:bg-white/[0.08] transition-colors cursor-pointer"
+              className="w-9 h-9 flex items-center justify-center rounded-full text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)] transition-colors cursor-pointer"
               title="Minimize player"
             >
               <ChevronDown className="w-5 h-5" />
             </button>
 
             <div className="flex flex-col items-center max-w-[220px] text-center">
-              <span className="text-[9px] uppercase font-semibold tracking-[0.25em] text-[#C5A059]">Now Playing</span>
-              <span className="text-xs font-serif-display italic text-white/80 truncate w-full mt-0.5">
+              <span className="text-[9px] uppercase font-semibold tracking-[0.25em] text-[var(--accent)]">Now Playing</span>
+              <span className="text-xs font-serif-display italic text-[var(--text-main)] truncate w-full mt-0.5">
                 {currentBook.title}
               </span>
             </div>
@@ -351,8 +351,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                 onClick={() => onToggleSaveBook(currentBook)}
                 className={`w-9 h-9 flex items-center justify-center rounded-full transition-colors cursor-pointer ${
                   isSaved
-                    ? 'text-[#C5A059] bg-[#C5A059]/15 border border-[#C5A059]/40'
-                    : 'text-white/60 hover:text-white hover:bg-white/[0.08]'
+                    ? 'text-[var(--accent)] bg-[var(--accent-dim)] border border-[var(--accent)]'
+                    : 'text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
                 }`}
                 title={isSaved ? 'Saved to Library' : 'Save to Library'}
               >
@@ -362,7 +362,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
               <button
                 id="btn-toggle-chapters"
                 onClick={() => setShowChapters(true)}
-                className="w-9 h-9 flex items-center justify-center rounded-full text-white/60 hover:text-white hover:bg-white/[0.08] transition-colors cursor-pointer"
+                className="w-9 h-9 flex items-center justify-center rounded-full text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)] transition-colors cursor-pointer"
                 title="Chapter tracks"
               >
                 <ListMusic className="w-4 h-4" />
@@ -372,7 +372,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
           {/* Large Artwork Display */}
           <div id="player-cover-container" className="relative my-auto flex flex-col items-center z-10 py-2">
-            <div className={`relative w-48 h-48 sm:w-56 sm:h-56 rounded-2xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.8)] border border-white/10 ring-1 ring-white/5 bg-[#111111] group ${isBuffering ? 'animate-pulse' : ''}`}>
+            <div className={`relative w-48 h-48 sm:w-56 sm:h-56 rounded-2xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.8)] border border-[var(--border-subtle)] ring-1 ring-[var(--border-subtle)] bg-[var(--surface)] group ${isBuffering ? 'animate-pulse' : ''}`}>
               <img
                 src={currentBook.coverImageUrl}
                 alt={currentBook.title}
@@ -381,26 +381,26 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
               {isPlaying && (
-                <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-black/80 backdrop-blur-md border border-[#C5A059]/40 flex items-center gap-1.5 text-[9px] text-[#C5A059] font-medium tracking-wider uppercase shadow-lg">
-                  <Radio className="w-3 h-3 text-[#C5A059] animate-pulse" /> Stream
+                <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-black/80 backdrop-blur-md border border-[var(--accent)] flex items-center gap-1.5 text-[9px] text-[var(--accent)] font-medium tracking-wider uppercase shadow-lg">
+                  <Radio className="w-3 h-3 text-[var(--accent)] animate-pulse" /> Stream
                 </div>
               )}
             </div>
 
             {/* Audiobook & Chapter Meta */}
             <div className="text-center mt-4 px-3 max-w-full">
-              <h2 className="text-base sm:text-lg font-serif-display italic font-semibold text-white leading-tight truncate">
+              <h2 className="text-base sm:text-lg font-serif-display italic font-semibold text-[var(--text-main)] leading-tight truncate">
                 {currentTrack?.title || currentBook.title}
               </h2>
-              <p className="text-xs font-serif-display italic text-[#A0A0A0] mt-1 truncate">{currentBook.author}</p>
+              <p className="text-xs font-serif-display italic text-[var(--text-dim)] mt-1 truncate">{currentBook.author}</p>
               <div className="flex items-center justify-center gap-2 mt-1 flex-wrap">
                 {currentBook.reader && (
-                  <p className="text-[10px] uppercase tracking-wider text-[#C5A059]/80 truncate">
+                  <p className="text-[10px] uppercase tracking-wider text-[var(--accent)] truncate">
                     Narrated by {currentBook.reader}
                   </p>
                 )}
                 {currentBook.availableQualities && (
-                  <span className="text-[9px] font-mono font-bold bg-white/[0.06] text-white/50 px-1.5 py-0.5 rounded border border-white/10 uppercase">
+                  <span className="text-[9px] font-mono font-bold bg-[var(--surface-raised)] text-[var(--text-dim)] px-1.5 py-0.5 rounded border border-[var(--border-subtle)] uppercase">
                     {(currentBook.selectedQuality || getSavedQualityPreference()) === '128k' ? '128 kbps' : (currentBook.selectedQuality || getSavedQualityPreference()) === '64k' ? '64 kbps' : 'HQ Stream'}
                   </span>
                 )}
@@ -414,7 +414,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
             <div className="space-y-1.5">
               <div
                 ref={progressBarRef}
-                className="w-full h-2 bg-white/10 rounded-full cursor-pointer relative transition-all group"
+                className="w-full h-2 bg-[var(--surface-raised)] rounded-full cursor-pointer relative transition-all group"
                 onMouseDown={onMouseDown}
                 onTouchStart={onTouchStart}
                 onTouchMove={onTouchMove}
@@ -429,7 +429,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
               >
                 {/* Played portion */}
                 <div
-                  className="absolute top-0 left-0 h-full bg-[#C5A059] rounded-full"
+                  className="absolute top-0 left-0 h-full bg-[var(--accent)] rounded-full"
                   style={{ width: `${Math.max(0, Math.min(100, displayPercent))}%` }}
                 />
                 {/* Thumb indicator */}
@@ -438,7 +438,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                   style={{ left: `${Math.max(0, Math.min(100, displayPercent))}%`, transform: 'translate(-50%, -50%)' }}
                 />
               </div>
-              <div className="flex justify-between text-[10px] tracking-wider font-mono text-[#C5A059]/90 px-0.5">
+              <div className="flex justify-between text-[10px] tracking-wider font-mono text-[var(--accent)] px-0.5">
                 <span>{formatTime(isDragging && dragPercent !== null ? (dragPercent / 100) * currentDuration : currentTime)}</span>
                 <span>{formatTime(currentDuration)}</span>
               </div>
@@ -450,7 +450,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
               <button
                 id="btn-player-skip-prev"
                 onClick={onSkipPrevious}
-                className="p-3 rounded-full bg-white/[0.04] hover:bg-white/[0.08] text-white/70 hover:text-white border border-white/5 hover:border-white/15 transition-all active:scale-95 cursor-pointer"
+                className="p-3 rounded-full bg-[var(--surface-raised)] hover:bg-[var(--surface-raised)] text-[var(--text-main)] hover:text-[var(--text-main)] border border-[var(--border-subtle)] hover:border-[var(--border-subtle)] transition-all active:scale-95 cursor-pointer"
                 title="Previous Track"
               >
                 <SkipBack className="w-4 h-4" />
@@ -460,7 +460,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
               <button
                 id="btn-player-rewind-15"
                 onClick={onRewind15}
-                className="p-3 rounded-full bg-white/[0.04] hover:bg-white/[0.08] text-white/70 hover:text-white border border-white/5 hover:border-white/15 transition-all active:scale-95 cursor-pointer"
+                className="p-3 rounded-full bg-[var(--surface-raised)] hover:bg-[var(--surface-raised)] text-[var(--text-main)] hover:text-[var(--text-main)] border border-[var(--border-subtle)] hover:border-[var(--border-subtle)] transition-all active:scale-95 cursor-pointer"
                 title="Rewind 15 Seconds"
               >
                 <RotateCcw className="w-4 h-4" />
@@ -470,7 +470,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
               <button
                 id="btn-player-main-play"
                 onClick={onTogglePlayPause}
-                className="w-15 h-15 sm:w-16 sm:h-16 rounded-full bg-[#C5A059] hover:bg-[#d4af65] text-black flex items-center justify-center shadow-[0_0_30px_rgba(197,160,89,0.35)] transition-all transform active:scale-95 cursor-pointer"
+                className="w-15 h-15 sm:w-16 sm:h-16 rounded-full bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black flex items-center justify-center shadow-[0_0_30px_rgba(var(--accent-rgb),0.35)] transition-all transform active:scale-95 cursor-pointer"
               >
                 {isPlaying ? (
                   <Pause className="w-6 h-6 fill-current" />
@@ -483,7 +483,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
               <button
                 id="btn-player-forward-30"
                 onClick={onForward30}
-                className="p-3 rounded-full bg-white/[0.04] hover:bg-white/[0.08] text-white/70 hover:text-white border border-white/5 hover:border-white/15 transition-all active:scale-95 cursor-pointer"
+                className="p-3 rounded-full bg-[var(--surface-raised)] hover:bg-[var(--surface-raised)] text-[var(--text-main)] hover:text-[var(--text-main)] border border-[var(--border-subtle)] hover:border-[var(--border-subtle)] transition-all active:scale-95 cursor-pointer"
                 title="Fast Forward 30 Seconds"
               >
                 <RotateCw className="w-4 h-4" />
@@ -493,7 +493,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
               <button
                 id="btn-player-skip-next"
                 onClick={onSkipNext}
-                className="p-3 rounded-full bg-white/[0.04] hover:bg-white/[0.08] text-white/70 hover:text-white border border-white/5 hover:border-white/15 transition-all active:scale-95 cursor-pointer"
+                className="p-3 rounded-full bg-[var(--surface-raised)] hover:bg-[var(--surface-raised)] text-[var(--text-main)] hover:text-[var(--text-main)] border border-[var(--border-subtle)] hover:border-[var(--border-subtle)] transition-all active:scale-95 cursor-pointer"
                 title="Next Track"
               >
                 <SkipForward className="w-4 h-4" />
@@ -501,7 +501,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
             </div>
 
             {/* Audio Enhancement & Convenience Toolbar */}
-            <div className="pt-2.5 grid grid-cols-5 gap-1.5 border-t border-white/10">
+            <div className="pt-2.5 grid grid-cols-5 gap-1.5 border-t border-[var(--border-subtle)]">
               {/* Voice Enhancer / EQ Preset */}
               {onOpenVoiceEnhancer ? (
                 <button
@@ -509,8 +509,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                   onClick={onOpenVoiceEnhancer}
                   className={`flex flex-col sm:flex-row items-center justify-center gap-1 py-2 px-1 rounded-xl border text-[10px] font-semibold transition-all cursor-pointer ${
                     voiceEnhancer !== 'off'
-                      ? 'bg-[#C5A059]/20 border-[#C5A059] text-[#C5A059]'
-                      : 'bg-white/[0.03] border-white/10 text-white/60 hover:text-white hover:bg-white/[0.08]'
+                      ? 'bg-[var(--accent-dim)] border-[var(--accent)] text-[var(--accent)]'
+                      : 'bg-[var(--surface-raised)] border-[var(--border-subtle)] text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
                   }`}
                   title="Voice Clarity & Equalizer"
                 >
@@ -525,8 +525,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                 onClick={() => setShowNotesModal(true)}
                 className={`flex flex-col sm:flex-row items-center justify-center gap-1 py-2 px-1 rounded-xl border text-[10px] font-semibold transition-all cursor-pointer ${
                   notesCount > 0
-                    ? 'bg-[#C5A059]/20 border-[#C5A059] text-[#C5A059]'
-                    : 'bg-white/[0.03] border-white/10 text-white/60 hover:text-white hover:bg-white/[0.08]'
+                    ? 'bg-[var(--accent-dim)] border-[var(--accent)] text-[var(--accent)]'
+                    : 'bg-[var(--surface-raised)] border-[var(--border-subtle)] text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
                 }`}
                 title="Book Notes & Reflections"
               >
@@ -541,8 +541,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                   onClick={onOpenSleepTimer}
                   className={`flex flex-col sm:flex-row items-center justify-center gap-1 py-2 px-1 rounded-xl border text-[10px] font-semibold transition-all cursor-pointer ${
                     sleepTimer.isActive
-                      ? 'bg-[#C5A059]/20 border-[#C5A059] text-[#C5A059]'
-                      : 'bg-white/[0.03] border-white/10 text-white/60 hover:text-white hover:bg-white/[0.08]'
+                      ? 'bg-[var(--accent-dim)] border-[var(--accent)] text-[var(--accent)]'
+                      : 'bg-[var(--surface-raised)] border-[var(--border-subtle)] text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
                   }`}
                   title="Sleep Timer"
                 >
@@ -567,8 +567,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                     : downloadSummary.isFullyDownloaded
                     ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
                     : downloadSummary.isPartiallyDownloaded
-                    ? 'bg-[#C5A059]/20 border-[#C5A059]/50 text-[#C5A059]'
-                    : 'bg-white/[0.03] border-white/10 text-white/60 hover:text-white hover:bg-white/[0.08]'
+                    ? 'bg-[var(--accent-dim)] border-[var(--accent)] text-[var(--accent)]'
+                    : 'bg-[var(--surface-raised)] border-[var(--border-subtle)] text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
                 }`}
                 title="Toggle Offline Chapters Download"
               >
@@ -584,7 +584,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                   </>
                 ) : downloadSummary.isPartiallyDownloaded ? (
                   <>
-                    <Download className="w-3.5 h-3.5 text-[#C5A059] shrink-0" />
+                    <Download className="w-3.5 h-3.5 text-[var(--accent)] shrink-0" />
                     <span className="truncate">{downloadSummary.downloadedCount}/{downloadSummary.totalTracks}</span>
                   </>
                 ) : (
@@ -600,7 +600,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                 <button
                   id="btn-player-car-mode"
                   onClick={onOpenCarMode}
-                  className="flex flex-col sm:flex-row items-center justify-center gap-1 py-2 px-1 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 text-white/60 hover:text-white text-[10px] font-semibold transition-all cursor-pointer"
+                  className="flex flex-col sm:flex-row items-center justify-center gap-1 py-2 px-1 rounded-xl bg-[var(--surface-raised)] hover:bg-[var(--surface-raised)] border border-[var(--border-subtle)] text-[var(--text-dim)] hover:text-[var(--text-main)] text-[10px] font-semibold transition-all cursor-pointer"
                   title="Car Driving Mode"
                 >
                   <Car className="w-3.5 h-3.5" />
@@ -615,9 +615,9 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                 <button
                   id="btn-read-ebook-banner"
                   onClick={onOpenEbookReader}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl bg-white/[0.04] hover:bg-[#C5A059]/15 text-white/80 hover:text-[#C5A059] border border-white/10 hover:border-[#C5A059]/40 text-xs font-serif-display italic transition-all active:scale-98 cursor-pointer"
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl bg-[var(--surface-raised)] hover:bg-[var(--accent-dim)] text-[var(--text-main)] hover:text-[var(--accent)] border border-[var(--border-subtle)] hover:border-[var(--accent)] text-xs font-serif-display italic transition-all active:scale-98 cursor-pointer"
                 >
-                  <BookOpen className="w-3.5 h-3.5 text-[#C5A059]" />
+                  <BookOpen className="w-3.5 h-3.5 text-[var(--accent)]" />
                   <span>Read Gutenberg Ebook Text & Sync Audio</span>
                 </button>
               </div>
@@ -628,16 +628,16 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
           {showChapters && (
             <div
               id="chapters-drawer"
-              className="absolute inset-0 bg-[#050505]/98 backdrop-blur-2xl z-50 flex flex-col p-4 animate-in fade-in zoom-in-95 duration-200"
+              className="absolute inset-0 bg-[var(--bg)] backdrop-blur-2xl z-50 flex flex-col p-4 animate-in fade-in zoom-in-95 duration-200"
             >
-              <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">
+              <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)] shrink-0">
                 <div className="flex items-center gap-2 min-w-0">
-                  <ListMusic className="w-4 h-4 text-[#C5A059] shrink-0" />
+                  <ListMusic className="w-4 h-4 text-[var(--accent)] shrink-0" />
                   <div>
-                    <h3 className="font-serif-display italic font-semibold text-sm text-white leading-tight">
+                    <h3 className="font-serif-display italic font-semibold text-sm text-[var(--text-main)] leading-tight">
                       Chapters ({currentBook.tracks.length})
                     </h3>
-                    <p className="text-[10px] text-white/40 font-mono">
+                    <p className="text-[10px] text-[var(--text-dim)] font-mono">
                       Continuous Unabridged Stream
                     </p>
                   </div>
@@ -645,7 +645,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
 
                 <div className="flex items-center gap-2 shrink-0">
                   {currentBook.availableQualities && currentBook.availableQualities.length > 1 && (
-                    <div className="flex items-center bg-white/[0.05] p-0.5 rounded-lg border border-white/10">
+                    <div className="flex items-center bg-[var(--surface-raised)] p-0.5 rounded-lg border border-[var(--border-subtle)]">
                       {currentBook.availableQualities.map((q) => {
                         const isQActive = (currentBook.selectedQuality || getSavedQualityPreference()) === q;
                         return (
@@ -656,8 +656,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                             }}
                             className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all ${
                               isQActive
-                                ? 'bg-[#C5A059] text-black shadow-sm'
-                                : 'text-white/60 hover:text-white'
+                                ? 'bg-[var(--accent)] text-black shadow-sm'
+                                : 'text-[var(--text-dim)] hover:text-[var(--text-main)]'
                             }`}
                           >
                             {q}
@@ -670,7 +670,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                   <button
                     id="btn-close-chapters"
                     onClick={() => setShowChapters(false)}
-                    className="p-1.5 rounded-full text-white/40 hover:text-white hover:bg-white/5 cursor-pointer"
+                    className="p-1.5 rounded-full text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)] cursor-pointer"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -692,8 +692,8 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                       }}
                       className={`flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all ${
                         isCurrent
-                          ? 'bg-[#C5A059]/15 border border-[#C5A059]/40 text-[#C5A059]'
-                          : 'hover:bg-white/[0.04] text-white/70 border border-transparent hover:text-white'
+                          ? 'bg-[var(--accent-dim)] border border-[var(--accent)] text-[var(--accent)]'
+                          : 'hover:bg-[var(--surface-raised)] text-[var(--text-main)] border border-transparent hover:text-[var(--text-main)]'
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
@@ -707,7 +707,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                           </span>
                         )}
                         <span className="font-mono text-[10px]">{formatTime(track.durationSeconds)}</span>
-                        {isCurrent && <Check className="w-3.5 h-3.5 text-[#C5A059]" />}
+                        {isCurrent && <Check className="w-3.5 h-3.5 text-[var(--accent)]" />}
                       </div>
                     </div>
                   );
@@ -720,19 +720,19 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
           {showOfflineDrawer && (
             <div
               id="player-offline-drawer"
-              className="absolute inset-0 bg-[#080808]/98 backdrop-blur-2xl z-50 flex flex-col p-4 sm:p-5 animate-in fade-in zoom-in-95 duration-200"
+              className="absolute inset-0 bg-[var(--bg)] backdrop-blur-2xl z-50 flex flex-col p-4 sm:p-5 animate-in fade-in zoom-in-95 duration-200"
             >
               {/* Header */}
-              <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">
+              <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)] shrink-0">
                 <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-xl bg-[#C5A059]/15 text-[#C5A059] border border-[#C5A059]/30">
+                  <div className="p-2 rounded-xl bg-[var(--accent-dim)] text-[var(--accent)] border border-[var(--accent)]">
                     <Download className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="font-serif-display italic font-semibold text-sm text-white flex items-center gap-2">
+                    <h3 className="font-serif-display italic font-semibold text-sm text-[var(--text-main)] flex items-center gap-2">
                       Offline Audio Downloads
                     </h3>
-                    <p className="text-[11px] text-white/50">
+                    <p className="text-[11px] text-[var(--text-dim)]">
                       {downloadSummary.downloadedCount} of {tracks.length} chapters downloaded
                     </p>
                   </div>
@@ -740,16 +740,16 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                 <button
                   id="btn-close-offline-drawer"
                   onClick={() => setShowOfflineDrawer(false)}
-                  className="p-1.5 rounded-full text-white/40 hover:text-white hover:bg-white/5 cursor-pointer"
+                  className="p-1.5 rounded-full text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)] cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
               {/* Download Status & 1-Tap Toggle Banner */}
-              <div className="my-3 p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 space-y-3 shrink-0">
+              <div className="my-3 p-3.5 rounded-2xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] space-y-3 shrink-0">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-white/70">
+                  <span className="text-[var(--text-main)]">
                     {downloadSummary.isFullyDownloaded ? (
                       <span className="text-emerald-400 font-semibold flex items-center gap-1">
                         <CheckCircle2 className="w-3.5 h-3.5" /> All chapters ready offline ({formatBytes(downloadSummary.sizeBytes)})
@@ -760,16 +760,16 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                       </span>
                     )}
                   </span>
-                  <span className="font-mono text-[11px] text-[#C5A059]">
+                  <span className="font-mono text-[11px] text-[var(--accent)]">
                     {Math.round((downloadSummary.downloadedCount / tracks.length) * 100)}% Complete
                   </span>
                 </div>
 
                 {/* Progress bar */}
-                <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
+                <div className="w-full h-2 rounded-full bg-[var(--surface-raised)] overflow-hidden">
                   <div
                     className={`h-full transition-all duration-300 ${
-                      downloadSummary.isFullyDownloaded ? 'bg-emerald-400' : 'bg-[#C5A059]'
+                      downloadSummary.isFullyDownloaded ? 'bg-emerald-400' : 'bg-[var(--accent)]'
                     }`}
                     style={{
                       width: isDownloading
@@ -785,7 +785,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                     id="btn-download-remaining-chapters"
                     onClick={handleDownloadRemaining}
                     disabled={isDownloading}
-                    className="w-full py-2.5 px-4 rounded-xl bg-[#C5A059] hover:bg-[#d4af65] disabled:opacity-50 text-black font-semibold text-xs flex items-center justify-center gap-2 shadow-lg shadow-[#C5A059]/20 transition-all cursor-pointer active:scale-98"
+                    className="w-full py-2.5 px-4 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-50 text-black font-semibold text-xs flex items-center justify-center gap-2 shadow-lg shadow-[rgba(var(--accent-rgb),0.3)] transition-all cursor-pointer active:scale-98"
                   >
                     {isDownloading ? (
                       <>
@@ -802,7 +802,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                     )}
                   </button>
                 ) : (
-                  <div className="flex items-center justify-between text-xs text-white/50 pt-1">
+                  <div className="flex items-center justify-between text-xs text-[var(--text-dim)] pt-1">
                     <span className="text-[11px] text-emerald-400">Available offline without internet</span>
                     {onOpenOfflineManager && (
                       <button
@@ -810,7 +810,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                           setShowOfflineDrawer(false);
                           onOpenOfflineManager();
                         }}
-                        className="text-[11px] text-[#C5A059] hover:underline"
+                        className="text-[11px] text-[var(--accent)] hover:underline"
                       >
                         Manage in Storage
                       </button>
@@ -820,7 +820,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
               </div>
 
               {/* Granular Chapter Download / Delete Toggles */}
-              <div className="text-[11px] font-semibold text-white/40 uppercase tracking-wider px-1 pb-1">
+              <div className="text-[11px] font-semibold text-[var(--text-dim)] uppercase tracking-wider px-1 pb-1">
                 Toggle Individual Chapters
               </div>
 
@@ -831,15 +831,15 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                   return (
                     <div
                       key={track.id}
-                      className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:border-white/15 flex items-center justify-between gap-3 transition-colors"
+                      className="p-2.5 rounded-xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] hover:border-[var(--border-subtle)] flex items-center justify-between gap-3 transition-colors"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="text-xs font-mono text-white/40 w-5">{idx + 1}.</span>
+                        <span className="text-xs font-mono text-[var(--text-dim)] w-5">{idx + 1}.</span>
                         <div className="min-w-0">
-                          <p className="text-xs font-serif-display italic text-white/90 truncate">
+                          <p className="text-xs font-serif-display italic text-[var(--text-main)] truncate">
                             {track.title}
                           </p>
-                          <p className="text-[10px] text-white/40 font-mono">
+                          <p className="text-[10px] text-[var(--text-dim)] font-mono">
                             {formatTime(track.durationSeconds || 1200)} • ~{formatBytes((track.durationSeconds || 1200) * 58000)}
                           </p>
                         </div>
@@ -852,7 +852,7 @@ export const FullPlayerModal: React.FC<FullPlayerModalProps> = ({
                         className={`px-2.5 py-1.5 rounded-lg text-[10px] font-semibold flex items-center gap-1 transition-all cursor-pointer shrink-0 ${
                           isTrackOffline
                             ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-rose-500/20 hover:border-rose-500/30 hover:text-rose-300'
-                            : 'bg-white/[0.04] border border-white/10 text-white/60 hover:text-[#C5A059] hover:border-[#C5A059]/40 hover:bg-[#C5A059]/10'
+                            : 'bg-[var(--surface-raised)] border border-[var(--border-subtle)] text-[var(--text-dim)] hover:text-[var(--accent)] hover:border-[var(--accent)] hover:bg-[var(--accent-dim)]'
                         }`}
                         title={isTrackOffline ? 'Click to remove offline file' : 'Click to download chapter'}
                       >

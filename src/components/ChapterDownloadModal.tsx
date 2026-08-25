@@ -148,17 +148,17 @@ export const ChapterDownloadModal: React.FC<ChapterDownloadModalProps> = ({
       <div
         id="chapter-download-modal-card"
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg bg-[#0E0E0E] rounded-t-3xl sm:rounded-3xl border border-white/[0.12] shadow-2xl overflow-hidden flex flex-col my-auto max-h-[85vh]"
+        className="w-full max-w-lg bg-[var(--surface)] rounded-t-3xl sm:rounded-3xl border border-[var(--border-subtle)] shadow-2xl overflow-hidden flex flex-col my-auto max-h-[85vh]"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.08] bg-[#141414]/90 shrink-0">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-subtle)] bg-[var(--surface-raised)] shrink-0">
           <div className="flex items-center gap-2">
-            <Download className="w-4 h-4 text-[#C5A059]" />
-            <h3 className="text-sm font-semibold text-white">Download for Offline Listening</h3>
+            <Download className="w-4 h-4 text-[var(--accent)]" />
+            <h3 className="text-sm font-semibold text-[var(--text-main)]">Download for Offline Listening</h3>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-white/60 hover:text-white transition-colors"
+            className="p-1.5 rounded-xl bg-[var(--surface-raised)] hover:bg-[var(--surface-raised)] text-[var(--text-dim)] hover:text-[var(--text-main)] transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -167,21 +167,21 @@ export const ChapterDownloadModal: React.FC<ChapterDownloadModalProps> = ({
         {/* Body */}
         <div className="p-5 overflow-y-auto space-y-4 flex-1 scrollbar-thin scrollbar-thumb-white/10">
           {/* Book Info Snippet */}
-          <div className="flex items-center gap-3 bg-white/[0.03] p-3 rounded-2xl border border-white/5">
+          <div className="flex items-center gap-3 bg-[var(--surface-raised)] p-3 rounded-2xl border border-[var(--border-subtle)]">
             <img
               src={book.coverImageUrl}
               alt={book.title}
-              className="w-12 h-16 object-cover rounded-lg shrink-0 border border-white/10"
+              className="w-12 h-16 object-cover rounded-lg shrink-0 border border-[var(--border-subtle)]"
               referrerPolicy="no-referrer"
             />
             <div className="min-w-0 flex-1">
-              <h4 className="text-xs font-serif-display italic font-semibold text-white truncate">
+              <h4 className="text-xs font-serif-display italic font-semibold text-[var(--text-main)] truncate">
                 {book.title}
               </h4>
-              <p className="text-[11px] text-[#C5A059] font-serif-display italic truncate mt-0.5">
+              <p className="text-[11px] text-[var(--accent)] font-serif-display italic truncate mt-0.5">
                 {book.author}
               </p>
-              <div className="flex items-center gap-2 text-[10px] text-white/50 mt-1 font-mono">
+              <div className="flex items-center gap-2 text-[10px] text-[var(--text-dim)] mt-1 font-mono">
                 <span>{tracks.length} Chapters Total</span>
                 <span>•</span>
                 <span className="text-emerald-400">
@@ -193,31 +193,31 @@ export const ChapterDownloadModal: React.FC<ChapterDownloadModalProps> = ({
 
           {/* Quick Choice Presets */}
           <div>
-            <span className="text-[10px] uppercase font-bold tracking-wider text-white/40 block mb-2">
+            <span className="text-[10px] uppercase font-bold tracking-wider text-[var(--text-dim)] block mb-2">
               Quick Selection Choices
             </span>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <button
                 onClick={selectAll}
-                className="p-2.5 rounded-xl bg-white/[0.04] hover:bg-[#C5A059]/20 hover:border-[#C5A059]/40 border border-white/5 text-[11px] font-medium text-white transition-all text-center"
+                className="p-2.5 rounded-xl bg-[var(--surface-raised)] hover:bg-[var(--accent-dim)] hover:border-[var(--accent)] border border-[var(--border-subtle)] text-[11px] font-medium text-[var(--text-main)] transition-all text-center"
               >
                 All Chapters ({tracks.length})
               </button>
               <button
                 onClick={() => selectNextN(3)}
-                className="p-2.5 rounded-xl bg-white/[0.04] hover:bg-[#C5A059]/20 hover:border-[#C5A059]/40 border border-white/5 text-[11px] font-medium text-white transition-all text-center"
+                className="p-2.5 rounded-xl bg-[var(--surface-raised)] hover:bg-[var(--accent-dim)] hover:border-[var(--accent)] border border-[var(--border-subtle)] text-[11px] font-medium text-[var(--text-main)] transition-all text-center"
               >
                 Next 3 Chapters
               </button>
               <button
                 onClick={() => selectNextN(5)}
-                className="p-2.5 rounded-xl bg-white/[0.04] hover:bg-[#C5A059]/20 hover:border-[#C5A059]/40 border border-white/5 text-[11px] font-medium text-white transition-all text-center"
+                className="p-2.5 rounded-xl bg-[var(--surface-raised)] hover:bg-[var(--accent-dim)] hover:border-[var(--accent)] border border-[var(--border-subtle)] text-[11px] font-medium text-[var(--text-main)] transition-all text-center"
               >
                 Next 5 Chapters
               </button>
               <button
                 onClick={clearSelection}
-                className="p-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/5 text-[11px] font-medium text-white/60 transition-all text-center"
+                className="p-2.5 rounded-xl bg-[var(--surface-raised)] hover:bg-[var(--surface-raised)] border border-[var(--border-subtle)] text-[11px] font-medium text-[var(--text-dim)] transition-all text-center"
               >
                 Clear Selection
               </button>
@@ -226,7 +226,7 @@ export const ChapterDownloadModal: React.FC<ChapterDownloadModalProps> = ({
 
           {/* Chapters List with check toggles */}
           <div className="space-y-1.5 pt-1">
-            <div className="flex items-center justify-between text-[10px] text-white/40 uppercase font-semibold px-1">
+            <div className="flex items-center justify-between text-[10px] text-[var(--text-dim)] uppercase font-semibold px-1">
               <span>Select Specific Chapters ({selectedTrackIds.length} Selected)</span>
               <span>Est: ~{formatBytes(estimatedBytes)}</span>
             </div>
@@ -242,18 +242,18 @@ export const ChapterDownloadModal: React.FC<ChapterDownloadModalProps> = ({
                     onClick={() => toggleSelectTrack(track.id)}
                     className={`flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer ${
                       isSelected
-                        ? 'bg-[#C5A059]/10 border-[#C5A059]/40 text-white'
+                        ? 'bg-[var(--accent-dim)] border-[var(--accent)] text-[var(--text-main)]'
                         : isDownloaded
-                        ? 'bg-emerald-500/5 border-emerald-500/20 text-white/80'
-                        : 'bg-white/[0.02] border-white/5 hover:border-white/15 text-white/70'
+                        ? 'bg-emerald-500/5 border-emerald-500/20 text-[var(--text-main)]'
+                        : 'bg-[var(--surface-raised)] border-[var(--border-subtle)] hover:border-[var(--border-subtle)] text-[var(--text-main)]'
                     }`}
                   >
                     <div className="flex items-center gap-2.5 min-w-0 pr-2">
                       <div
                         className={`w-4 h-4 rounded flex items-center justify-center border transition-colors ${
                           isSelected
-                            ? 'bg-[#C5A059] border-[#C5A059] text-black'
-                            : 'border-white/30 bg-transparent'
+                            ? 'bg-[var(--accent)] border-[var(--accent)] text-black'
+                            : 'border-[var(--border-subtle)] bg-transparent'
                         }`}
                       >
                         {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
@@ -261,12 +261,12 @@ export const ChapterDownloadModal: React.FC<ChapterDownloadModalProps> = ({
 
                       <div className="min-w-0">
                         <p className="text-xs font-medium truncate">
-                          <span className="text-white/40 font-mono mr-1.5">
+                          <span className="text-[var(--text-dim)] font-mono mr-1.5">
                             {idx + 1}.
                           </span>
                           {track.title}
                         </p>
-                        <p className="text-[10px] text-white/40 font-mono">
+                        <p className="text-[10px] text-[var(--text-dim)] font-mono">
                           {formatDuration(track.durationSeconds || 1200)}
                         </p>
                       </div>
@@ -285,7 +285,7 @@ export const ChapterDownloadModal: React.FC<ChapterDownloadModalProps> = ({
                             e.stopPropagation();
                             handleDeleteSingleTrack(track.id);
                           }}
-                          className="p-1 rounded-lg text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                          className="p-1 rounded-lg text-[var(--text-dim)] hover:text-red-400 hover:bg-red-500/10 transition-colors"
                           title="Delete downloaded file"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -300,19 +300,19 @@ export const ChapterDownloadModal: React.FC<ChapterDownloadModalProps> = ({
         </div>
 
         {/* Bottom Actions */}
-        <div className="p-4 border-t border-white/[0.08] bg-[#141414] shrink-0 space-y-3">
+        <div className="p-4 border-t border-[var(--border-subtle)] bg-[var(--surface-raised)] shrink-0 space-y-3">
           {isDownloading && (
             <div className="space-y-1">
-              <div className="flex justify-between text-[11px] text-white/70">
+              <div className="flex justify-between text-[11px] text-[var(--text-main)]">
                 <span className="flex items-center gap-1.5">
-                  <div className="w-3 h-3 border-2 border-[#C5A059] border-t-transparent rounded-full animate-spin" />
+                  <div className="w-3 h-3 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
                   Downloading selected chapters...
                 </span>
-                <span className="font-mono text-[#C5A059] font-bold">{progress}%</span>
+                <span className="font-mono text-[var(--accent)] font-bold">{progress}%</span>
               </div>
-              <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+              <div className="w-full h-1.5 bg-[var(--surface-raised)] rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-[#C5A059] transition-all duration-300 rounded-full"
+                  className="h-full bg-[var(--accent)] transition-all duration-300 rounded-full"
                   style={{ width: `${progress}%` }}
                 />
               </div>
@@ -322,7 +322,7 @@ export const ChapterDownloadModal: React.FC<ChapterDownloadModalProps> = ({
           <div className="flex items-center gap-3">
             <button
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-white/70 text-xs font-semibold transition-colors"
+              className="px-4 py-2.5 rounded-xl bg-[var(--surface-raised)] hover:bg-[var(--surface-raised)] text-[var(--text-main)] text-xs font-semibold transition-colors"
             >
               Cancel
             </button>
@@ -331,7 +331,7 @@ export const ChapterDownloadModal: React.FC<ChapterDownloadModalProps> = ({
               id="btn-confirm-chapter-download"
               onClick={handleStartDownload}
               disabled={selectedTrackIds.length === 0 || isDownloading}
-              className="flex-1 px-4 py-2.5 rounded-xl bg-[#C5A059] hover:bg-[#d4af65] disabled:opacity-50 text-black text-xs font-bold transition-all shadow-[0_0_20px_rgba(197,160,89,0.3)] flex items-center justify-center gap-2"
+              className="flex-1 px-4 py-2.5 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-50 text-black text-xs font-bold transition-all shadow-[0_0_20px_rgba(var(--accent-rgb),0.3)] flex items-center justify-center gap-2"
             >
               {isDownloading ? (
                 <span>Downloading {selectedTrackIds.length} Chapters...</span>

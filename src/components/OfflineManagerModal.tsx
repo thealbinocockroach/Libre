@@ -83,25 +83,25 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
       <div
         id="offline-manager-modal"
-        className="w-full max-w-lg rounded-3xl bg-[#121212] border border-white/10 shadow-2xl p-6 space-y-5 text-white animate-in zoom-in-95 max-h-[85vh] flex flex-col"
+        className="w-full max-w-lg rounded-3xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] shadow-2xl p-6 space-y-5 text-[var(--text-main)] animate-in zoom-in-95 max-h-[85vh] flex flex-col"
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/10 pb-4 shrink-0">
+        <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-4 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-[#C5A059]/10 text-[#C5A059] border border-[#C5A059]/20">
+            <div className="p-2 rounded-xl bg-[var(--accent-dim)] text-[var(--accent)] border border-[var(--accent-dim)]">
               <HardDrive className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-serif-display font-semibold italic text-[#E8E8E8]">
+              <h3 className="text-base font-serif-display font-semibold italic text-[var(--text-main)]">
                 Offline Mode & Downloads
               </h3>
-              <p className="text-[11px] text-white/50">Manage local audiobook cache for flight or commute</p>
+              <p className="text-[11px] text-[var(--text-dim)]">Manage local audiobook cache for flight or commute</p>
             </div>
           </div>
           <button
             id="btn-close-offline-modal"
             onClick={onClose}
-            className="p-1.5 rounded-full text-white/40 hover:text-white hover:bg-white/10 transition-colors"
+            className="p-1.5 rounded-full text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)] transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -110,7 +110,7 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
         {/* Offline Mode Toggle & Storage Summary Card */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 shrink-0">
           {/* Toggle Switch */}
-          <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-between">
+          <div className="p-4 rounded-2xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] flex items-center justify-between">
             <div className="space-y-0.5">
               <div className="flex items-center gap-1.5">
                 {isOfflineOnly ? (
@@ -120,7 +120,7 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
                 )}
                 <span className="text-xs font-semibold">{isOfflineOnly ? 'Offline Mode Active' : 'Online Mode'}</span>
               </div>
-              <p className="text-[10px] text-white/40">
+              <p className="text-[10px] text-[var(--text-dim)]">
                 {isOfflineOnly ? 'Playing strictly from local storage' : 'Streaming and downloading enabled'}
               </p>
             </div>
@@ -129,7 +129,7 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
               id="btn-toggle-offline-mode"
               onClick={onToggleOfflineOnly}
               className={`w-12 h-6 rounded-full transition-colors relative p-0.5 ${
-                isOfflineOnly ? 'bg-[#C5A059]' : 'bg-white/20'
+                isOfflineOnly ? 'bg-[var(--accent)]' : 'bg-[var(--surface-raised)]'
               }`}
             >
               <div
@@ -141,15 +141,15 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
           </div>
 
           {/* Storage Footprint */}
-          <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-between">
+          <div className="p-4 rounded-2xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] flex items-center justify-between">
             <div className="space-y-0.5">
-              <span className="text-[10px] uppercase font-bold text-white/40 tracking-wider">Local Storage Used</span>
-              <div className="text-lg font-mono font-bold text-[#E8E8E8]">
+              <span className="text-[10px] uppercase font-bold text-[var(--text-dim)] tracking-wider">Local Storage Used</span>
+              <div className="text-lg font-mono font-bold text-[var(--text-main)]">
                 {formatBytes(storageInfo.totalBytes)}
               </div>
-              <p className="text-[10px] text-[#C5A059]">{storageInfo.bookCount} books cached locally</p>
+              <p className="text-[10px] text-[var(--accent)]">{storageInfo.bookCount} books cached locally</p>
             </div>
-            <div className="p-2.5 rounded-xl bg-white/[0.05] border border-white/10 text-white/60">
+            <div className="p-2.5 rounded-xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] text-[var(--text-dim)]">
               <Download className="w-4 h-4" />
             </div>
           </div>
@@ -166,15 +166,15 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
           )}
 
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-white/40 mb-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-dim)] mb-2">
               Downloaded Audiobooks ({downloadedList.filter((b) => b.status === 'ready' || b.status === 'partial').length})
             </div>
 
             {downloadedList.filter((b) => b.status === 'ready' || b.status === 'partial').length === 0 ? (
-              <div className="p-6 rounded-2xl border border-dashed border-white/15 text-center text-white/40 space-y-1">
+              <div className="p-6 rounded-2xl border border-dashed border-[var(--border-subtle)] text-center text-[var(--text-dim)] space-y-1">
                 <Download className="w-6 h-6 mx-auto opacity-40" />
                 <p className="text-xs">No audiobooks saved offline yet.</p>
-                <p className="text-[10px] text-white/30">Download any book below to listen without internet.</p>
+                <p className="text-[10px] text-[var(--text-dim)]">Download any book below to listen without internet.</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -183,10 +183,10 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
                   .map((offlineItem) => (
                     <div
                       key={offlineItem.bookId}
-                      className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-between gap-3 group"
+                      className="p-3 rounded-2xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] flex items-center justify-between gap-3 group"
                     >
                       <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 border border-white/10 bg-black">
+                        <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 border border-[var(--border-subtle)] bg-black">
                           <img
                             src={offlineItem.book.coverImageUrl}
                             alt={offlineItem.book.title}
@@ -195,8 +195,8 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
                           />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <h4 className="text-xs font-semibold truncate text-[#E8E8E8]">{offlineItem.book.title}</h4>
-                          <div className="flex items-center gap-2 text-[10px] text-white/40">
+                          <h4 className="text-xs font-semibold truncate text-[var(--text-main)]">{offlineItem.book.title}</h4>
+                          <div className="flex items-center gap-2 text-[10px] text-[var(--text-dim)]">
                             <span>{formatBytes(offlineItem.sizeBytes)}</span>
                             <span>•</span>
                             {offlineItem.status === 'partial' ? (
@@ -219,7 +219,7 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
                             onReadBook(offlineItem.book);
                             onClose();
                           }}
-                          className="p-2 rounded-xl bg-white/[0.05] hover:bg-[#C5A059]/20 text-white/70 hover:text-[#C5A059] border border-white/10"
+                          className="p-2 rounded-xl bg-[var(--surface-raised)] hover:bg-[var(--accent-dim)] text-[var(--text-main)] hover:text-[var(--accent)] border border-[var(--border-subtle)]"
                           title="Read Ebook"
                         >
                           <BookOpen className="w-3.5 h-3.5" />
@@ -230,7 +230,7 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
                             onSelectBook(offlineItem.book);
                             onClose();
                           }}
-                          className="p-2 rounded-xl bg-[#C5A059] text-black font-semibold shadow-md"
+                          className="p-2 rounded-xl bg-[var(--accent)] text-black font-semibold shadow-md"
                           title="Play Offline"
                         >
                           <Play className="w-3.5 h-3.5 fill-current" />
@@ -238,7 +238,7 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
                         <button
                           id={`btn-delete-offline-${offlineItem.bookId}`}
                           onClick={() => handleDelete(offlineItem.bookId)}
-                          className="p-2 rounded-xl text-white/30 hover:text-red-400 hover:bg-white/5"
+                          className="p-2 rounded-xl text-[var(--text-dim)] hover:text-red-400 hover:bg-[var(--surface-raised)]"
                           title="Remove from Device"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -252,7 +252,7 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
 
           {/* Quick Download Available Catalog Books */}
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-white/40 mb-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-dim)] mb-2">
               Available to Download for Offline
             </div>
             <div className="space-y-2">
@@ -266,10 +266,10 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
                 return (
                   <div
                     key={book.id}
-                    className="p-3 rounded-2xl bg-white/[0.02] border border-white/10 flex items-center justify-between gap-3"
+                    className="p-3 rounded-2xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] flex items-center justify-between gap-3"
                   >
                     <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <div className="w-9 h-9 rounded-lg overflow-hidden shrink-0 border border-white/10 bg-black">
+                      <div className="w-9 h-9 rounded-lg overflow-hidden shrink-0 border border-[var(--border-subtle)] bg-black">
                         <img
                           src={book.coverImageUrl}
                           alt={book.title}
@@ -278,14 +278,14 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
                         />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <h4 className="text-xs font-semibold truncate text-[#E8E8E8]">{book.title}</h4>
-                        <p className="text-[10px] text-white/40 truncate">{book.author} • {book.tracks.length} tracks</p>
+                        <h4 className="text-xs font-semibold truncate text-[var(--text-main)]">{book.title}</h4>
+                        <p className="text-[10px] text-[var(--text-dim)] truncate">{book.author} • {book.tracks.length} tracks</p>
                       </div>
                     </div>
 
                     <div className="shrink-0">
                       {isCurrentDownloading ? (
-                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#C5A059]/10 border border-[#C5A059]/30 text-[#C5A059] text-xs font-mono">
+                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[var(--accent-dim)] border border-[var(--accent)] text-[var(--accent)] text-xs font-mono">
                           <RefreshCw className="w-3 h-3 animate-spin" />
                           <span>{downloadProgress}%</span>
                         </div>
@@ -293,7 +293,7 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
                         <button
                           id={`btn-start-download-${book.id}`}
                           onClick={() => handleDownload(book)}
-                          className="px-3 py-1.5 rounded-xl bg-white/[0.06] hover:bg-[#C5A059] text-white hover:text-black border border-white/10 hover:border-[#C5A059] text-xs font-semibold flex items-center gap-1.5 transition-all"
+                          className="px-3 py-1.5 rounded-xl bg-[var(--surface-raised)] hover:bg-[var(--accent)] text-[var(--text-main)] hover:text-black border border-[var(--border-subtle)] hover:border-[var(--accent)] text-xs font-semibold flex items-center gap-1.5 transition-all"
                         >
                           <Download className="w-3.5 h-3.5" />
                           <span>{isPartialDownload ? 'Resume' : 'Download'}</span>

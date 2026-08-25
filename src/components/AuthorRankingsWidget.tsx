@@ -76,13 +76,13 @@ export const AuthorRankingsWidget: React.FC<AuthorRankingsWidgetProps> = ({
     }
     if (rank === 3) {
       return (
-        <span className="w-6 h-6 rounded-full bg-amber-700 text-white flex items-center justify-center font-bold text-xs shadow-md shadow-amber-700/30">
+        <span className="w-6 h-6 rounded-full bg-amber-700 text-[var(--text-main)] flex items-center justify-center font-bold text-xs shadow-md shadow-amber-700/30">
           🥉
         </span>
       );
     }
     return (
-      <span className="w-6 h-6 rounded-full bg-white/[0.06] text-white/70 flex items-center justify-center font-mono font-bold text-xs border border-white/10">
+      <span className="w-6 h-6 rounded-full bg-[var(--surface-raised)] text-[var(--text-main)] flex items-center justify-center font-mono font-bold text-xs border border-[var(--border-subtle)]">
         #{rank}
       </span>
     );
@@ -93,32 +93,32 @@ export const AuthorRankingsWidget: React.FC<AuthorRankingsWidgetProps> = ({
   return (
     <div
       id="author-rankings-container"
-      className="p-5 rounded-2xl bg-[#111111] border border-white/[0.08] shadow-xl space-y-4"
+      className="p-5 rounded-2xl bg-[var(--surface)] border border-[var(--border-subtle)] shadow-xl space-y-4"
     >
       {/* Widget Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-white/5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-[var(--border-subtle)]">
         <div>
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-xl bg-[#C5A059]/15 border border-[#C5A059]/30 flex items-center justify-center text-[#C5A059]">
-              <Trophy className="w-4 h-4 text-[#C5A059]" />
+            <div className="w-7 h-7 rounded-xl bg-[var(--accent-dim)] border border-[var(--accent)] flex items-center justify-center text-[var(--accent)]">
+              <Trophy className="w-4 h-4 text-[var(--accent)]" />
             </div>
-            <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-white">
+            <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-[var(--text-main)]">
               Most Read Authors Leaderboard
             </h3>
           </div>
-          <p className="text-[11px] text-white/50 mt-0.5">
+          <p className="text-[11px] text-[var(--text-dim)] mt-0.5">
             Ranked by total time spent reading & listening to their works
           </p>
         </div>
 
         {/* Filter Pills */}
-        <div className="flex items-center gap-1 bg-white/[0.04] p-1 rounded-xl border border-white/5 self-start sm:self-auto">
+        <div className="flex items-center gap-1 bg-[var(--surface-raised)] p-1 rounded-xl border border-[var(--border-subtle)] self-start sm:self-auto">
           <button
             onClick={() => setFilterMode('all')}
             className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
               filterMode === 'all'
-                ? 'bg-[#C5A059] text-black font-bold shadow-sm'
-                : 'text-white/60 hover:text-white'
+                ? 'bg-[var(--accent)] text-black font-bold shadow-sm'
+                : 'text-[var(--text-dim)] hover:text-[var(--text-main)]'
             }`}
           >
             All Time
@@ -127,8 +127,8 @@ export const AuthorRankingsWidget: React.FC<AuthorRankingsWidgetProps> = ({
             onClick={() => setFilterMode('audio')}
             className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all flex items-center gap-1 ${
               filterMode === 'audio'
-                ? 'bg-[#C5A059] text-black font-bold shadow-sm'
-                : 'text-white/60 hover:text-white'
+                ? 'bg-[var(--accent)] text-black font-bold shadow-sm'
+                : 'text-[var(--text-dim)] hover:text-[var(--text-main)]'
             }`}
           >
             <Headphones className="w-3 h-3" /> Audio
@@ -138,7 +138,7 @@ export const AuthorRankingsWidget: React.FC<AuthorRankingsWidgetProps> = ({
             className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all flex items-center gap-1 ${
               filterMode === 'read'
                 ? 'bg-blue-400 text-black font-bold shadow-sm'
-                : 'text-white/60 hover:text-white'
+                : 'text-[var(--text-dim)] hover:text-[var(--text-main)]'
             }`}
           >
             <BookOpen className="w-3 h-3" /> Ebooks
@@ -149,25 +149,25 @@ export const AuthorRankingsWidget: React.FC<AuthorRankingsWidgetProps> = ({
       {/* Optional Search if more than 4 authors */}
       {rankings.length > 4 && (
         <div className="relative">
-          <Search className="w-3.5 h-3.5 text-white/40 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-3.5 h-3.5 text-[var(--text-dim)] absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search author rankings..."
-            className="w-full bg-white/[0.03] border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-white/30 focus:outline-none focus:border-[#C5A059]"
+            className="w-full bg-[var(--surface-raised)] border border-[var(--border-subtle)] rounded-xl pl-8 pr-3 py-1.5 text-xs text-[var(--text-main)] placeholder-white/30 focus:outline-none focus:border-[var(--accent)]"
           />
         </div>
       )}
 
       {/* Rankings List */}
       {filteredRankings.length === 0 ? (
-        <div className="py-10 text-center space-y-2 bg-white/[0.02] rounded-2xl border border-white/5 p-4">
-          <Users className="w-8 h-8 text-white/20 mx-auto" />
-          <p className="text-xs font-serif-display italic text-white/60">
+        <div className="py-10 text-center space-y-2 bg-[var(--surface-raised)] rounded-2xl border border-[var(--border-subtle)] p-4">
+          <Users className="w-8 h-8 text-[var(--text-dim)] mx-auto" />
+          <p className="text-xs font-serif-display italic text-[var(--text-dim)]">
             No author activity recorded yet
           </p>
-          <p className="text-[11px] text-white/40 max-w-xs mx-auto leading-relaxed">
+          <p className="text-[11px] text-[var(--text-dim)] max-w-xs mx-auto leading-relaxed">
             Listen to audiobooks or read ebooks to automatically build your author rankings.
           </p>
         </div>
@@ -186,8 +186,8 @@ export const AuthorRankingsWidget: React.FC<AuthorRankingsWidgetProps> = ({
                 id={`author-rank-row-${item.rank}`}
                 className={`rounded-2xl border transition-all duration-200 overflow-hidden ${
                   item.rank === 1
-                    ? 'bg-gradient-to-r from-[#171510] to-[#121212] border-[#C5A059]/40 shadow-lg shadow-[#C5A059]/5'
-                    : 'bg-[#141414] border-white/[0.07] hover:border-white/15'
+                    ? 'bg-gradient-to-r from-[#171510] to-[var(--surface-raised)] border-[var(--accent)] shadow-lg shadow-[rgba(var(--accent-rgb),0.3)]'
+                    : 'bg-[var(--surface-raised)] border-[var(--border-subtle)] hover:border-[var(--border-subtle)]'
                 }`}
               >
                 {/* Main Author Bar */}
@@ -203,23 +203,23 @@ export const AuthorRankingsWidget: React.FC<AuthorRankingsWidgetProps> = ({
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <h4 className="text-xs sm:text-sm font-serif-display italic font-bold text-white truncate">
+                        <h4 className="text-xs sm:text-sm font-serif-display italic font-bold text-[var(--text-main)] truncate">
                           {item.author}
                         </h4>
                         {item.rank === 1 && (
-                          <span className="shrink-0 text-[9px] font-bold text-[#C5A059] bg-[#C5A059]/15 px-1.5 py-0.5 rounded-full border border-[#C5A059]/30 flex items-center gap-0.5">
+                          <span className="shrink-0 text-[9px] font-bold text-[var(--accent)] bg-[var(--accent-dim)] px-1.5 py-0.5 rounded-full border border-[var(--accent)] flex items-center gap-0.5">
                             <Sparkles className="w-2.5 h-2.5" /> Top Author
                           </span>
                         )}
                       </div>
 
                       {/* Time Details & Breakdown */}
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-[11px] text-white/50">
-                        <span className="font-mono font-bold text-[#E5E5E5]">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-[11px] text-[var(--text-dim)]">
+                        <span className="font-mono font-bold text-[var(--text-main)]">
                           {formatTrueDurationShort(item.totalSeconds)} total
                         </span>
                         {item.listenedSeconds > 0 && (
-                          <span className="flex items-center gap-1 text-[#C5A059]">
+                          <span className="flex items-center gap-1 text-[var(--accent)]">
                             <Headphones className="w-3 h-3" />
                             <span>{formatTrueDurationShort(item.listenedSeconds)}</span>
                           </span>
@@ -230,7 +230,7 @@ export const AuthorRankingsWidget: React.FC<AuthorRankingsWidgetProps> = ({
                             <span>{formatTrueDurationShort(item.readSeconds)}</span>
                           </span>
                         )}
-                        <span className="text-white/40">
+                        <span className="text-[var(--text-dim)]">
                           {item.booksCount} title{item.booksCount !== 1 ? 's' : ''}
                         </span>
                       </div>
@@ -240,13 +240,13 @@ export const AuthorRankingsWidget: React.FC<AuthorRankingsWidgetProps> = ({
                   {/* Right: Relative Progress Bar & Accordion Caret */}
                   <div className="flex items-center gap-3 shrink-0">
                     <div className="hidden sm:flex flex-col items-end w-24">
-                      <span className="text-[10px] font-mono text-white/50">
+                      <span className="text-[10px] font-mono text-[var(--text-dim)]">
                         {item.percentageOfTotal}% share
                       </span>
-                      <div className="w-full h-1.5 bg-white/10 rounded-full mt-1 overflow-hidden">
+                      <div className="w-full h-1.5 bg-[var(--surface-raised)] rounded-full mt-1 overflow-hidden">
                         <div
                           className={`h-full rounded-full ${
-                            item.rank === 1 ? 'bg-[#C5A059]' : 'bg-white/40'
+                            item.rank === 1 ? 'bg-[var(--accent)]' : 'bg-[var(--surface-raised)]'
                           }`}
                           style={{ width: `${progressPercent}%` }}
                         />
@@ -254,7 +254,7 @@ export const AuthorRankingsWidget: React.FC<AuthorRankingsWidgetProps> = ({
                     </div>
 
                     <button
-                      className="p-1 rounded-lg text-white/40 hover:text-white hover:bg-white/5"
+                      className="p-1 rounded-lg text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]"
                       title={isExpanded ? 'Collapse books' : 'View books'}
                     >
                       {isExpanded ? (
@@ -268,8 +268,8 @@ export const AuthorRankingsWidget: React.FC<AuthorRankingsWidgetProps> = ({
 
                 {/* Expanded Details: Book Breakdown for this Author */}
                 {isExpanded && item.books.length > 0 && (
-                  <div className="px-4 pb-4 pt-1 border-t border-white/5 bg-black/40 space-y-2 animate-in fade-in duration-200">
-                    <p className="text-[10px] uppercase tracking-wider text-white/40 font-semibold mb-2">
+                  <div className="px-4 pb-4 pt-1 border-t border-[var(--border-subtle)] bg-black/40 space-y-2 animate-in fade-in duration-200">
+                    <p className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold mb-2">
                       Titles read by {item.author}:
                     </p>
 
@@ -277,22 +277,22 @@ export const AuthorRankingsWidget: React.FC<AuthorRankingsWidgetProps> = ({
                       {item.books.map((b) => (
                         <div
                           key={b.id}
-                          className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white/[0.03] border border-white/5 hover:border-[#C5A059]/30 transition-all"
+                          className="flex items-center justify-between gap-2 p-2 rounded-xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] hover:border-[var(--accent)] transition-all"
                         >
                           <div className="flex items-center gap-2 min-w-0">
                             {b.coverImageUrl && (
                               <img
                                 src={b.coverImageUrl}
                                 alt={b.title}
-                                className="w-8 h-11 object-cover rounded-lg bg-black/40 shrink-0 border border-white/10"
+                                className="w-8 h-11 object-cover rounded-lg bg-black/40 shrink-0 border border-[var(--border-subtle)]"
                                 referrerPolicy="no-referrer"
                               />
                             )}
                             <div className="min-w-0">
-                              <p className="text-xs font-serif-display italic text-white font-medium truncate">
+                              <p className="text-xs font-serif-display italic text-[var(--text-main)] font-medium truncate">
                                 {b.title}
                               </p>
-                              <div className="flex items-center gap-2 text-[10px] text-white/50 font-mono mt-0.5">
+                              <div className="flex items-center gap-2 text-[10px] text-[var(--text-dim)] font-mono mt-0.5">
                                 <span>{formatTrueDurationShort(b.seconds)}</span>
                                 {b.listenedSeconds > 0 && <span>🎧 {formatTrueDurationShort(b.listenedSeconds)}</span>}
                                 {b.readSeconds > 0 && <span>📖 {formatTrueDurationShort(b.readSeconds)}</span>}
@@ -314,7 +314,7 @@ export const AuthorRankingsWidget: React.FC<AuthorRankingsWidgetProps> = ({
                                   tracks: [],
                                 })
                               }
-                              className="p-1.5 rounded-lg bg-[#C5A059]/15 hover:bg-[#C5A059] text-[#C5A059] hover:text-black transition-colors shrink-0"
+                              className="p-1.5 rounded-lg bg-[var(--accent-dim)] hover:bg-[var(--accent)] text-[var(--accent)] hover:text-black transition-colors shrink-0"
                               title="Play Audiobook"
                             >
                               <Play className="w-3 h-3 fill-current" />
