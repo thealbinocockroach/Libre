@@ -1,3 +1,19 @@
+const _fallbackCoverUrl =
+    'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&q=80&w=800';
+
+String _safeString(dynamic value, {String fallback = ''}) {
+  if (value is String) return value;
+  if (value != null) return value.toString();
+  return fallback;
+}
+
+int _safeInt(dynamic value, {int fallback = 0}) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value) ?? fallback;
+  return fallback;
+}
+
 class AudioTrack {
   final String id;
   final String title;
@@ -14,13 +30,18 @@ class AudioTrack {
   });
 
   factory AudioTrack.fromJson(Map<String, dynamic> json, int index) {
-    // Handling LibriVox / Internet Archive structure
-    final title = json['title'] as String? ?? 'Chapter ${index + 1}';
-    final url = json['listen_url'] as String? ?? 
-                json['url'] as String? ?? 
-                json['download_url'] as String? ?? '';
-    
-    // Parse duration either in seconds string or HH:MM:SS format
+    final title = _safeString(json['title'],
+        fallback: 'Chapter ${index + 1}');
+
+    String url = '';
+    if (json['listen_url'] is String && (json['listen_url'] as String).isNotEmpty) {
+      url = json['listen_url'] as String;
+    } else if (json['url'] is String && (json['url'] as String).isNotEmpty) {
+      url = json['url'] as String;
+    } else if (json['download_url'] is String && (json['download_url'] as String).isNotEmpty) {
+      url = json['download_url'] as String;
+    }
+
     Duration trackDuration = Duration.zero;
     final playtime = json['playtime'] ?? json['length'] ?? json['duration'];
     if (playtime is num) {
@@ -30,7 +51,7 @@ class AudioTrack {
     }
 
     return AudioTrack(
-      id: json['id']?.toString() ?? 'track_$index',
+      id: _safeString(json['id'], fallback: 'track_$index'),
       title: title,
       audioUrl: url,
       duration: trackDuration,
@@ -39,10 +60,18 @@ class AudioTrack {
   }
 
   static Duration _parseDurationString(String timeStr) {
+    if (timeStr.trim().isEmpty) return Duration.zero;
     try {
-      final parts = timeStr.split(':').map((e) => int.tryParse(e) ?? 0).toList();
+      final parts = timeStr
+          .split(':')
+          .map((e) => int.tryParse(e.trim()) ?? 0)
+          .toList();
       if (parts.length == 3) {
-        return Duration(hours: parts[0], minutes: parts[1], seconds: parts[2]);
+        return Duration(
+          hours: parts[0],
+          minutes: parts[1],
+          seconds: parts[2],
+        );
       } else if (parts.length == 2) {
         return Duration(minutes: parts[0], seconds: parts[1]);
       } else if (parts.length == 1) {
@@ -53,12 +82,23 @@ class AudioTrack {
   }
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'title': title,
-    'audioUrl': audioUrl,
-    'durationSeconds': duration.inSeconds,
-    'trackNumber': trackNumber,
-  };
+        'id': id,
+        'title': title,
+        'audioUrl': audioUrl,
+        'durationSeconds': duration.inSeconds,
+        'trackNumber': trackNumber,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AudioTrack &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          trackNumber == other.trackNumber;
+
+  @override
+  int get hashCode => id.hashCode ^ trackNumber.hashCode;
 }
 
 class AudiobookModel {
@@ -89,62 +129,107 @@ class AudiobookModel {
   });
 
   factory AudiobookModel.fromLibriVoxJson(Map<String, dynamic> json) {
-    // Extract authors array safely
     String authorName = 'Unknown Author';
-    if (json['authors'] != null && json['authors'] is List && (json['authors'] as List).isNotEmpty) {
-      final firstAuthor = (json['authors'] as List).first;
-      final firstName = firstAuthor['first_name'] ?? '';
-      final lastName = firstAuthor['last_name'] ?? '';
-      authorName = '$firstName $lastName'.trim();
-      if (authorName.isEmpty) authorName = 'Unknown Author';
+    if (json['authors'] is List) {
+      final authorsList = json['authors'] as List;
+      if (authorsList.isNotEmpty && authorsList.first is Map) {
+        final firstAuthor = authorsList.first as Map<String, dynamic>;
+        final firstName = _safeString(firstAuthor['first_name']);
+        final lastName = _safeString(firstAuthor['last_name']);
+        final combined = '$firstName $lastName'.trim();
+        if (combined.isNotEmpty) authorName = combined;
+      }
     }
 
-    // Clean HTML tags from description if present
-    String rawDesc = json['description'] as String? ?? 'No description available.';
+    String rawDesc = _safeString(json['description'],
+        fallback: 'No description available.');
     final cleanDesc = rawDesc
         .replaceAll(RegExp(r'<[^>]*>|&[^;]+;'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
+    final description =
+        cleanDesc.isNotEmpty ? cleanDesc : 'No description available.';
 
-    // Cover image resolution
-    // LibriVox books on Internet Archive usually have identifier like librivoxaudio_<id> or book title
-    String cover = json['coverart_jpg'] as String? ?? '';
-    if (cover.isEmpty && json['url_iarchive'] != null) {
-      final archiveId = (json['url_iarchive'] as String).split('/').lastWhere((e) => e.isNotEmpty, orElse: () => '');
+    String cover = _safeString(json['coverart_jpg']);
+    if (cover.isEmpty && json['url_iarchive'] is String) {
+      final archiveUrl = json['url_iarchive'] as String;
+      final archiveId = archiveUrl
+          .split('/')
+          .lastWhere((e) => e.isNotEmpty, orElse: () => '');
       if (archiveId.isNotEmpty) {
         cover = 'https://archive.org/services/img/$archiveId';
       }
     }
-    if (cover.isEmpty) {
-      // High quality curated fallback book cover aesthetic
-      cover = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&q=80&w=800';
-    }
+    if (cover.isEmpty) cover = _fallbackCoverUrl;
 
-    // Parse sections/tracks
     List<AudioTrack> parsedTracks = [];
-    if (json['sections'] != null && json['sections'] is List) {
+    if (json['sections'] is List) {
       final sections = json['sections'] as List;
       for (int i = 0; i < sections.length; i++) {
-        parsedTracks.add(AudioTrack.fromJson(sections[i] as Map<String, dynamic>, i));
+        if (sections[i] is Map<String, dynamic>) {
+          parsedTracks.add(
+            AudioTrack.fromJson(sections[i] as Map<String, dynamic>, i),
+          );
+        }
       }
     }
 
+    final id = _safeString(json['id']);
+    final title = _safeString(json['title'], fallback: 'Untitled Audiobook');
+
+    String? readerName;
+    if (parsedTracks.isNotEmpty) {
+      final sections = json['sections'] as List;
+      if (sections.isNotEmpty && sections.first is Map) {
+        final firstSection = sections.first as Map<String, dynamic>;
+        final readers = firstSection['readers'];
+        if (readers is List && readers.isNotEmpty && readers.first is Map) {
+          final firstReader = readers.first as Map<String, dynamic>;
+          final displayName = _safeString(firstReader['display_name']);
+          if (displayName.isNotEmpty) readerName = displayName;
+        }
+      }
+    }
+
+    final language = _safeString(json['language'], fallback: 'English');
+    final totalTime = _safeInt(json['totaltimesecs']);
+
     return AudiobookModel(
-      id: json['id']?.toString() ?? '',
-      title: json['title'] as String? ?? 'Untitled Audiobook',
+      id: id,
+      title: title,
       author: authorName,
-      description: cleanDesc,
+      description: description,
       coverImageUrl: cover,
-      reader: (json['sections'] != null && (json['sections'] as List).isNotEmpty)
-          ? (json['sections'] as List).first['readers']?[0]?['display_name']
-          : null,
-      language: json['language'] as String? ?? 'English',
-      totalTimeSecs: (json['totaltimesecs'] is num)
-          ? (json['totaltimesecs'] as num).toInt()
-          : int.tryParse(json['totaltimesecs']?.toString() ?? '0') ?? 0,
+      reader: readerName,
+      language: language,
+      totalTimeSecs: totalTime,
       tracks: parsedTracks,
-      urlLibrivox: json['url_librivox'] as String?,
-      urlArchive: json['url_iarchive'] as String?,
+      urlLibrivox: json['url_librivox'] is String
+          ? json['url_librivox'] as String
+          : null,
+      urlArchive: json['url_iarchive'] is String
+          ? json['url_iarchive'] as String
+          : null,
+    );
+  }
+
+  factory AudiobookModel.fromArchiveJson(Map<String, dynamic> json) {
+    final id = _safeString(json['identifier']);
+    final title = _safeString(json['title'], fallback: 'Untitled');
+    final creator =
+        _safeString(json['creator'], fallback: 'Unknown Author');
+
+    return AudiobookModel(
+      id: id,
+      title: title,
+      author: creator,
+      description:
+          'Audiobook from the Internet Archive LibriVox collection.',
+      coverImageUrl: id.isNotEmpty
+          ? 'https://archive.org/services/img/$id'
+          : _fallbackCoverUrl,
+      language: _safeString(json['language'], fallback: 'English'),
+      tracks: [],
     );
   }
 
@@ -185,4 +270,14 @@ class AudiobookModel {
       urlArchive: urlArchive ?? this.urlArchive,
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AudiobookModel &&
+          runtimeType == other.runtimeType &&
+          id == other.id;
+
+  @override
+  int get hashCode => id.hashCode;
 }

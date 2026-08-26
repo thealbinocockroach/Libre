@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 import '../features/catalog/models/audiobook_model.dart';
@@ -9,20 +10,26 @@ Future<AudioHandler> initAudioService() async {
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.libriaudio.channel.audio',
       androidNotificationChannelName: 'LibriAudio Playback',
+      androidNotificationChannelDescription: 'Manages audiobook playback controls in background',
       androidNotificationOngoing: true,
       androidStopForegroundOnPause: true,
       androidShowNotificationBadge: true,
-      notificationColor: 0xFF1E293B,
+      notificationColor: Color(0xFF1E293B),
+      androidNotificationIcon: 'mipmap/ic_launcher',
+      fastForwardInterval: Duration(seconds: 30),
+      rewindInterval: Duration(seconds: 15),
     ),
   );
 }
 
 class LibriAudioHandler extends BaseAudioHandler with SeekHandler {
   final AudioPlayer _player = AudioPlayer();
-  
+  final List<StreamSubscription<dynamic>> _subscriptions = [];
+
   AudiobookModel? _currentBook;
   List<AudioTrack> _playlist = [];
   int _currentIndex = 0;
+  bool _isDisposed = false;
 
   AudiobookModel? get currentBook => _currentBook;
   List<AudioTrack> get playlist => _playlist;
@@ -34,45 +41,75 @@ class LibriAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   void _initPlayerEventForwarding() {
-    // Forward playback state from just_audio to audio_service
-    _player.playbackEventStream.listen((PlaybackEvent event) {
-      final playing = _player.playing;
-      playbackState.add(
-        playbackState.value.copyWith(
-          controls: [
-            MediaControl.skipToPrevious,
-            if (playing) MediaControl.pause else MediaControl.play,
-            MediaControl.skipToNext,
-            MediaControl.stop,
-          ],
-          systemActions: const {
-            MediaAction.seek,
-            MediaAction.seekForward,
-            MediaAction.seekBackward,
-          },
-          androidCompactActionIndices: const [0, 1, 2],
-          processingState: const {
-            ProcessingState.idle: AudioProcessingState.idle,
-            ProcessingState.loading: AudioProcessingState.loading,
-            ProcessingState.buffering: AudioProcessingState.buffering,
-            ProcessingState.ready: AudioProcessingState.ready,
-            ProcessingState.completed: AudioProcessingState.completed,
-          }[_player.processingState]!,
-          playing: playing,
-          updatePosition: _player.position,
-          bufferedPosition: _player.bufferedPosition,
-          speed: _player.speed,
-          queueIndex: _currentIndex,
-        ),
-      );
-    });
+    _subscriptions.add(
+      _player.playbackEventStream.listen(
+        (PlaybackEvent event) {
+          if (_isDisposed) return;
+          final playing = _player.playing;
+          playbackState.add(
+            playbackState.value.copyWith(
+              controls: [
+                MediaControl.skipToPrevious,
+                if (playing) MediaControl.pause else MediaControl.play,
+                MediaControl.skipToNext,
+                MediaControl.stop,
+              ],
+              systemActions: const {
+                MediaAction.seek,
+                MediaAction.seekForward,
+                MediaAction.seekBackward,
+              },
+              androidCompactActionIndices: const [0, 1, 2],
+              processingState: const {
+                ProcessingState.idle: AudioProcessingState.idle,
+                ProcessingState.loading: AudioProcessingState.loading,
+                ProcessingState.buffering: AudioProcessingState.buffering,
+                ProcessingState.ready: AudioProcessingState.ready,
+                ProcessingState.completed: AudioProcessingState.completed,
+              }[_player.processingState]!,
+              playing: playing,
+              updatePosition: _player.position,
+              bufferedPosition: _player.bufferedPosition,
+              speed: _player.speed,
+              queueIndex: _currentIndex,
+            ),
+          );
+        },
+        onError: (Object e, StackTrace st) {
+          debugPrint('[LibriAudioHandler] Playback event stream error: $e');
+          if (_isDisposed) return;
+          playbackState.add(
+            playbackState.value.copyWith(
+              processingState: AudioProcessingState.idle,
+              playing: false,
+            ),
+          );
+        },
+      ),
+    );
 
-    // Listen to track completion and automatically advance
-    _player.playerStateStream.listen((state) {
-      if (state.processingState == ProcessingState.completed) {
-        skipToNext();
-      }
-    });
+    _subscriptions.add(
+      _player.playerStateStream.listen((state) {
+        if (_isDisposed) return;
+        if (state.processingState == ProcessingState.completed) {
+          skipToNext();
+        }
+      }),
+    );
+
+    _subscriptions.add(
+      _player.sequenceStateStream.listen((sequenceState) {
+        if (_isDisposed) return;
+        final source = sequenceState?.currentSource;
+        final tag = source?.tag;
+        if (tag is MediaItem) {
+          final extras = tag.extras;
+          if (extras != null && extras.containsKey('audioUrl')) {
+            debugPrint('[LibriAudioHandler] Sequence updated: ${extras['audioUrl']}');
+          }
+        }
+      }),
+    );
   }
 
   Future<void> loadBook(AudiobookModel book, {int initialTrackIndex = 0}) async {
@@ -84,7 +121,7 @@ class LibriAudioHandler extends BaseAudioHandler with SeekHandler {
               id: 'single_${book.id}',
               title: book.title,
               audioUrl: '',
-              duration: Duration(seconds: book.totalTimeSecs),
+              duration: Duration(seconds: book.totalTimeSecs > 0 ? book.totalTimeSecs : 1),
               trackNumber: 1,
             )
           ];
@@ -98,7 +135,11 @@ class LibriAudioHandler extends BaseAudioHandler with SeekHandler {
         artist: book.author,
         duration: track.duration,
         artUri: Uri.tryParse(book.coverImageUrl),
-        extras: {'audioUrl': track.audioUrl, 'bookId': book.id},
+        extras: {
+          'audioUrl': track.audioUrl,
+          'bookId': book.id,
+          'trackNumber': track.trackNumber,
+        },
       );
     }).toList();
 
@@ -111,7 +152,6 @@ class LibriAudioHandler extends BaseAudioHandler with SeekHandler {
     _currentIndex = index;
     final track = _playlist[_currentIndex];
 
-    // Update mediaItem for lock-screen / notification controls
     mediaItem.add(
       MediaItem(
         id: track.id,
@@ -119,17 +159,50 @@ class LibriAudioHandler extends BaseAudioHandler with SeekHandler {
         title: track.title,
         artist: _currentBook?.author ?? 'Unknown Author',
         duration: track.duration,
-        artUri: _currentBook != null ? Uri.tryParse(_currentBook!.coverImageUrl) : null,
+        artUri: _currentBook != null
+            ? Uri.tryParse(_currentBook!.coverImageUrl)
+            : null,
       ),
     );
 
     try {
       if (track.audioUrl.isNotEmpty) {
-        await _player.setUrl(track.audioUrl);
+        final duration = await _player.setUrl(track.audioUrl);
+        if (duration == null) {
+          debugPrint('[LibriAudioHandler] Warning: setUrl returned null duration');
+        }
         await _player.play();
       }
-    } catch (e) {
-      // Audio load error handled gracefully
+    } on TimeoutException catch (e) {
+      debugPrint('[LibriAudioHandler] Timeout loading track: $e');
+      if (!_isDisposed) {
+        playbackState.add(
+          playbackState.value.copyWith(
+            processingState: AudioProcessingState.idle,
+            playing: false,
+          ),
+        );
+      }
+    } on PlayerException catch (e) {
+      debugPrint('[LibriAudioHandler] Player error: ${e.code} — ${e.message}');
+      if (!_isDisposed) {
+        playbackState.add(
+          playbackState.value.copyWith(
+            processingState: AudioProcessingState.idle,
+            playing: false,
+          ),
+        );
+      }
+    } catch (e, st) {
+      debugPrint('[LibriAudioHandler] Unexpected error loading track: $e\n$st');
+      if (!_isDisposed) {
+        playbackState.add(
+          playbackState.value.copyWith(
+            processingState: AudioProcessingState.idle,
+            playing: false,
+          ),
+        );
+      }
     }
   }
 
@@ -140,7 +213,10 @@ class LibriAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> pause() => _player.pause();
 
   @override
-  Future<void> seek(Duration position) => _player.seek(position);
+  Future<void> seek(Duration position) {
+    final clamped = position < Duration.zero ? Duration.zero : position;
+    return _player.seek(clamped);
+  }
 
   @override
   Future<void> stop() async {
@@ -168,7 +244,8 @@ class LibriAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> setSpeed(double speed) async {
-    await _player.setSpeed(speed);
+    final clampedSpeed = speed.clamp(0.5, 3.0);
+    await _player.setSpeed(clampedSpeed);
   }
 
   Future<void> seekRelative(int seconds) async {
@@ -176,5 +253,51 @@ class LibriAudioHandler extends BaseAudioHandler with SeekHandler {
     final target = current + Duration(seconds: seconds);
     final clamped = target < Duration.zero ? Duration.zero : target;
     await _player.seek(clamped);
+  }
+
+  @override
+  Future<void> onTaskRemoved() async {
+    await _savePositionBeforeStop();
+    await stop();
+    await _dispose();
+  }
+
+  Future<void> _savePositionBeforeStop() async {
+    final book = _currentBook;
+    final track = _playlist.isNotEmpty && _currentIndex < _playlist.length
+        ? _playlist[_currentIndex]
+        : null;
+    if (book != null && track != null && _player.position > Duration.zero) {
+      mediaItem.add(
+        mediaItem.value?.copyWith(
+          duration: _player.duration,
+          extras: {
+            ...?mediaItem.value?.extras,
+            'lastPositionMs': _player.position.inMilliseconds,
+            'savedAt': DateTime.now().millisecondsSinceEpoch,
+          },
+        ),
+      );
+    }
+  }
+
+  Future<void> onNotificationAction(String action, Map<String, dynamic>? extras) async {
+    switch (action) {
+      case 'rewind':
+        await seekRelative(-15);
+        break;
+      case 'fastForward':
+        await seekRelative(30);
+        break;
+    }
+  }
+
+  Future<void> _dispose() async {
+    _isDisposed = true;
+    for (final sub in _subscriptions) {
+      await sub.cancel();
+    }
+    _subscriptions.clear();
+    await _player.dispose();
   }
 }

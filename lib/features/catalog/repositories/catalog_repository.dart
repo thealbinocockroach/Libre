@@ -1,4 +1,3 @@
-import 'package:dio/dio.dart';
 import '../../../core/api_client.dart';
 import '../models/audiobook_model.dart';
 
@@ -10,128 +9,274 @@ abstract class ICatalogRepository {
 
 class CatalogRepository implements ICatalogRepository {
   final ApiClient _apiClient;
+  String? _gutenbergToken;
 
-  CatalogRepository({ApiClient? apiClient}) : _apiClient = apiClient ?? ApiClient();
+  CatalogRepository({ApiClient? apiClient, String? gutenbergToken})
+      : _apiClient = apiClient ?? ApiClient(),
+        _gutenbergToken = gutenbergToken;
+
+  set gutenbergToken(String? token) => _gutenbergToken = token;
+
+  String? _tokenForEndpoint(String endpoint) {
+    if (endpoint.contains('gutenberg.org') && _gutenbergToken != null && _gutenbergToken!.isNotEmpty) {
+      return _gutenbergToken;
+    }
+    return null;
+  }
+
+  static const List<String> _librivoxEndpoints = [
+    'https://librivox.org/api/feed/audiobooks',
+    'https://www.gutenberg.org/ebooks/search/?query=audiobook&format=json',
+    'https://archive.org/advancedsearch.php',
+  ];
 
   @override
   Future<List<AudiobookModel>> fetchExploreAudiobooks({int limit = 20, int offset = 0}) async {
-    try {
-      final response = await _apiClient.get(
-        ApiClient.librivoxBaseUrl,
-        queryParameters: {
-          'format': 'json',
-          'limit': limit,
-          'offset': offset,
-          'extended': '1',
-        },
-      );
+    for (int i = 0; i < _librivoxEndpoints.length; i++) {
+      try {
+        final endpoint = _librivoxEndpoints[i];
+        final response = await _apiClient.get(
+          endpoint,
+          queryParameters: _buildExploreParams(endpoint, limit, offset),
+          maxRetries: i == 0 ? 2 : 1,
+          authToken: _tokenForEndpoint(endpoint),
+        );
 
-      if (response.statusCode == 200 && response.data != null) {
-        final data = response.data;
-        if (data is Map<String, dynamic> && data['books'] != null) {
-          final booksList = data['books'] as List;
-          return booksList.map((item) => AudiobookModel.fromLibriVoxJson(item as Map<String, dynamic>)).toList();
+        if (response.statusCode == 200 && response.data != null) {
+          final books = _parseBooksFromResponse(response.data, endpoint);
+          if (books.isNotEmpty) return books;
         }
+      } on WafBlockedException {
+        continue;
+      } on RateLimitException {
+        continue;
+      } on TimeoutException {
+        continue;
+      } on NetworkException {
+        continue;
+      } on ServerException {
+        continue;
+      } catch (e) {
+        continue;
       }
-      return _getCuratedFallbackBooks();
-    } catch (e) {
-      // Return curated list if network fails or API format fluctuates
-      return _getCuratedFallbackBooks();
     }
+
+    return _getCuratedFallbackBooks();
   }
 
   @override
   Future<List<AudiobookModel>> searchAudiobooks(String query, {int limit = 25}) async {
     if (query.trim().isEmpty) return [];
 
-    try {
-      // Query LibriVox API by title or author
-      final response = await _apiClient.get(
-        ApiClient.librivoxBaseUrl,
-        queryParameters: {
-          'format': 'json',
-          'title': '^$query',
-          'limit': limit,
-          'extended': '1',
-        },
-      );
-
-      List<AudiobookModel> results = [];
-      if (response.statusCode == 200 && response.data != null) {
-        final data = response.data;
-        if (data is Map<String, dynamic> && data['books'] != null) {
-          final booksList = data['books'] as List;
-          results = booksList.map((item) => AudiobookModel.fromLibriVoxJson(item as Map<String, dynamic>)).toList();
-        }
-      }
-
-      // If title search yielded few results, also query by author
-      if (results.length < 5) {
-        final authorResponse = await _apiClient.get(
-          ApiClient.librivoxBaseUrl,
-          queryParameters: {
-            'format': 'json',
-            'author': query,
-            'limit': limit,
-            'extended': '1',
-          },
+    for (int i = 0; i < _librivoxEndpoints.length; i++) {
+      try {
+        final endpoint = _librivoxEndpoints[i];
+        final response = await _apiClient.get(
+          endpoint,
+          queryParameters: _buildSearchParams(endpoint, query, limit),
+          maxRetries: i == 0 ? 2 : 1,
+          authToken: _tokenForEndpoint(endpoint),
         );
-        if (authorResponse.statusCode == 200 && authorResponse.data != null) {
-          final data = authorResponse.data;
-          if (data is Map<String, dynamic> && data['books'] != null) {
-            final moreBooks = (data['books'] as List)
-                .map((item) => AudiobookModel.fromLibriVoxJson(item as Map<String, dynamic>))
-                .toList();
-            final existingIds = results.map((e) => e.id).toSet();
-            for (final book in moreBooks) {
-              if (!existingIds.contains(book.id)) {
-                results.add(book);
-              }
+
+        if (response.statusCode == 200 && response.data != null) {
+          final results = _parseBooksFromResponse(response.data, endpoint);
+          if (results.isNotEmpty) {
+            if (results.length < 5 && i < _librivoxEndpoints.length - 1) {
+              final moreResults = await _tryAuthorSearch(query, limit);
+              return _mergeResults(results, moreResults);
             }
+            return results;
           }
         }
+      } on WafBlockedException {
+        continue;
+      } on RateLimitException {
+        continue;
+      } on TimeoutException {
+        continue;
+      } on NetworkException {
+        continue;
+      } on ServerException {
+        continue;
+      } catch (e) {
+        continue;
       }
-
-      return results;
-    } catch (e) {
-      // Filter locally from fallback if offline
-      return _getCuratedFallbackBooks()
-          .where((book) =>
-              book.title.toLowerCase().contains(query.toLowerCase()) ||
-              book.author.toLowerCase().contains(query.toLowerCase()))
-          .toList();
     }
+
+    return _getCuratedFallbackBooks()
+        .where((book) =>
+            book.title.toLowerCase().contains(query.toLowerCase()) ||
+            book.author.toLowerCase().contains(query.toLowerCase()))
+        .toList();
   }
 
   @override
   Future<AudiobookModel> fetchAudiobookDetails(String id) async {
+    for (int i = 0; i < _librivoxEndpoints.length; i++) {
+      try {
+        final endpoint = _librivoxEndpoints[i];
+        final response = await _apiClient.get(
+          endpoint,
+          queryParameters: _buildDetailParams(endpoint, id),
+          maxRetries: i == 0 ? 2 : 1,
+          authToken: _tokenForEndpoint(endpoint),
+        );
+
+        if (response.statusCode == 200 && response.data != null) {
+          final books = _parseBooksFromResponse(response.data, endpoint);
+          if (books.isNotEmpty) return books.first;
+        }
+      } on WafBlockedException {
+        continue;
+      } on RateLimitException {
+        continue;
+      } on TimeoutException {
+        continue;
+      } on NetworkException {
+        continue;
+      } on ServerException {
+        continue;
+      } catch (e) {
+        continue;
+      }
+    }
+
+    final fallback = _getCuratedFallbackBooks().firstWhere(
+      (b) => b.id == id,
+      orElse: () => _getCuratedFallbackBooks().first,
+    );
+    return fallback;
+  }
+
+  Map<String, dynamic> _buildExploreParams(String endpoint, int limit, int offset) {
+    if (endpoint.contains('gutenberg.org')) {
+      return {'page': (offset ~/ limit) + 1};
+    }
+    if (endpoint.contains('archive.org')) {
+      return {
+        'q': 'mediatype:audio AND collection:librivox',
+        'fl[]': 'identifier,title,creator',
+        'rows': limit,
+        'page': (offset ~/ limit) + 1,
+        'output': 'json',
+      };
+    }
+    return {
+      'format': 'json',
+      'limit': limit,
+      'offset': offset,
+      'extended': '1',
+    };
+  }
+
+  Map<String, dynamic> _buildSearchParams(String endpoint, String query, int limit) {
+    if (endpoint.contains('gutenberg.org')) {
+      return {'query': query};
+    }
+    if (endpoint.contains('archive.org')) {
+      return {
+        'q': '$query AND mediatype:audio AND collection:librivox',
+        'fl[]': 'identifier,title,creator',
+        'rows': limit,
+        'output': 'json',
+      };
+    }
+    return {
+      'format': 'json',
+      'title': '^$query',
+      'limit': limit,
+      'extended': '1',
+    };
+  }
+
+  Map<String, dynamic> _buildDetailParams(String endpoint, String id) {
+    if (endpoint.contains('gutenberg.org')) {
+      return {};
+    }
+    if (endpoint.contains('archive.org')) {
+      return {
+        'q': 'identifier:$id',
+        'output': 'json',
+      };
+    }
+    return {
+      'format': 'json',
+      'id': id,
+      'extended': '1',
+    };
+  }
+
+  List<AudiobookModel> _parseBooksFromResponse(dynamic data, String endpoint) {
+    try {
+      if (endpoint.contains('archive.org') && data is Map<String, dynamic>) {
+        return _parseArchiveResponse(data);
+      }
+      if (data is Map<String, dynamic> && data['books'] != null) {
+        final booksList = data['books'] as List;
+        return booksList
+            .whereType<Map<String, dynamic>>()
+            .map((item) => AudiobookModel.fromLibriVoxJson(item))
+            .toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  List<AudiobookModel> _parseArchiveResponse(Map<String, dynamic> data) {
+    final response = data['response'];
+    if (response == null) return [];
+    final docs = response['docs'];
+    if (docs is! List) return [];
+
+    return docs.map<AudiobookModel>((doc) {
+      if (doc is! Map<String, dynamic>) {
+        return const AudiobookModel(
+          id: '',
+          title: 'Untitled',
+          author: 'Unknown Author',
+          description: '',
+          coverImageUrl: '',
+          language: 'English',
+          tracks: [],
+        );
+      }
+      return AudiobookModel.fromArchiveJson(doc);
+    }).whereType<AudiobookModel>().toList();
+  }
+
+  Future<List<AudiobookModel>> _tryAuthorSearch(String query, int limit) async {
     try {
       final response = await _apiClient.get(
         ApiClient.librivoxBaseUrl,
         queryParameters: {
           'format': 'json',
-          'id': id,
+          'author': query,
+          'limit': limit,
           'extended': '1',
         },
       );
-
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
         if (data is Map<String, dynamic> && data['books'] != null) {
-          final list = data['books'] as List;
-          if (list.isNotEmpty) {
-            return AudiobookModel.fromLibriVoxJson(list.first as Map<String, dynamic>);
-          }
+          return (data['books'] as List)
+              .whereType<Map<String, dynamic>>()
+              .map((item) => AudiobookModel.fromLibriVoxJson(item))
+              .toList();
         }
       }
-      throw AppException('Audiobook details not found');
-    } catch (e) {
-      final fallback = _getCuratedFallbackBooks().firstWhere(
-        (b) => b.id == id,
-        orElse: () => _getCuratedFallbackBooks().first,
-      );
-      return fallback;
+    } catch (_) {}
+    return [];
+  }
+
+  List<AudiobookModel> _mergeResults(List<AudiobookModel> a, List<AudiobookModel> b) {
+    final existingIds = a.map((e) => e.id).toSet();
+    final merged = List<AudiobookModel>.from(a);
+    for (final book in b) {
+      if (!existingIds.contains(book.id)) {
+        merged.add(book);
+      }
     }
+    return merged;
   }
 
   List<AudiobookModel> _getCuratedFallbackBooks() {
