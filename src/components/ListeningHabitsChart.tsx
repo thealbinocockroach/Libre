@@ -269,7 +269,7 @@ export const ListeningHabitsChart: React.FC = () => {
           <button
             onClick={() => setActiveView('both')}
             className={`px-2 py-0.5 rounded text-[10px] font-medium transition-all ${
-              activeView === 'both' ? 'bg-[var(--accent)] text-black font-bold' : 'text-[var(--text-dim)] hover:text-[var(--text-main)]'
+              activeView === 'both' ? 'bg-[var(--accent)] text-[var(--on-accent)] font-bold' : 'text-[var(--text-dim)] hover:text-[var(--text-main)]'
             }`}
           >
             All
@@ -277,7 +277,7 @@ export const ListeningHabitsChart: React.FC = () => {
           <button
             onClick={() => setActiveView('listen')}
             className={`px-2 py-0.5 rounded text-[10px] font-medium transition-all flex items-center gap-1 ${
-              activeView === 'listen' ? 'bg-[var(--accent)] text-black font-bold' : 'text-[var(--text-dim)] hover:text-[var(--text-main)]'
+              activeView === 'listen' ? 'bg-[var(--accent)] text-[var(--on-accent)] font-bold' : 'text-[var(--text-dim)] hover:text-[var(--text-main)]'
             }`}
           >
             <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" /> Audio

@@ -1,4 +1,4 @@
-package com.libriaudio.app.media;
+package com.libreaudio.app.media;
 
 import android.content.Intent;
 

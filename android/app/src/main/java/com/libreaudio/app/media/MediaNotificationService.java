@@ -1,4 +1,4 @@
-package com.libriaudio.app.media;
+package com.libreaudio.app.media;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -28,7 +28,7 @@ public class MediaNotificationService extends Service {
 
     static MediaNotificationPlugin pluginRef;
     static MediaNotificationService instance;
-    static final String CHANNEL_ID = "libriaudio_media_channel";
+    static final String CHANNEL_ID = "libreaudio_media_channel";
     static final int NOTIF_ID = 4242;
 
     private MediaSessionCompat session;
@@ -49,7 +49,7 @@ public class MediaNotificationService extends Service {
         instance = this;
         createChannel();
 
-        session = new MediaSessionCompat(this, "LibriAudioSession");
+        session = new MediaSessionCompat(this, "LibreAudioSession");
         session.setFlags(
             MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS |
             MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS

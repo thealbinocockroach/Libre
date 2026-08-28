@@ -17,8 +17,11 @@ import { BookmarksModal } from './components/BookmarksModal';
 import { CarModeModal } from './components/CarModeModal';
 import { OfflineManagerModal } from './components/OfflineManagerModal';
 import { BookDetailModal } from './components/BookDetailModal';
+import { GenreView } from './components/GenreView';
+import { AppLogo } from './components/AppLogo';
 import { getAllOfflineBooks, isBookOfflineReady } from './utils/offlineStorage';
-import { resolveFullTracklist } from './utils/librivoxRecommendations';
+import { resolveFullTracklist, LIBRIVOX_GENRES } from './utils/librivoxRecommendations';
+import { GenreCategory } from './utils/librivoxRecommendations';
 import { parseUploadedEpub } from './utils/epubParser';
 import { initTheme } from './utils/themeManager';
 import {
@@ -38,8 +41,6 @@ import {
   Settings,
   BarChart3,
 } from 'lucide-react';
-import { AppLogo } from './components/AppLogo';
-
 export default function App() {
   const [activeTab, setActiveTab] = useState<'explore' | 'search' | 'library' | 'stats' | 'settings'>('explore');
   const [showFullPlayer, setShowFullPlayer] = useState(false);
@@ -47,6 +48,9 @@ export default function App() {
   const [readingBook, setReadingBook] = useState<Audiobook | null>(INITIAL_AUDIOBOOKS[0]);
   const [catalog, setCatalog] = useState<Audiobook[]>(INITIAL_AUDIOBOOKS);
   const [isLoadingFeed, setIsLoadingFeed] = useState(false);
+
+  // App intro splash animation state
+  const [showIntro, setShowIntro] = useState(true);
 
   // Modals for playback & storage features
   const [showSleepTimerModal, setShowSleepTimerModal] = useState(false);
@@ -56,6 +60,8 @@ export default function App() {
   const [showOfflineManagerModal, setShowOfflineManagerModal] = useState(false);
   const [selectedBookForDetails, setSelectedBookForDetails] = useState<Audiobook | null>(null);
   const [showBookDetailModal, setShowBookDetailModal] = useState(false);
+  const [activeGenre, setActiveGenre] = useState<GenreCategory | null>(null);
+  const [showGenreView, setShowGenreView] = useState(false);
 
   // Offline items state
   const [offlineBooks, setOfflineBooks] = useState<OfflineBookData[]>([]);
@@ -136,6 +142,12 @@ export default function App() {
     initPositionFlushHandlers();
   }, []);
 
+  // Intro splash animation — auto-dismiss after a short delay
+  useEffect(() => {
+    const timer = setTimeout(() => setShowIntro(false), 2300);
+    return () => clearTimeout(timer);
+  }, []);
+
   // Sync Audio Quality Preference Changes dynamically
   useEffect(() => {
     const handleQualityChanged = (e: any) => {
@@ -172,7 +184,10 @@ export default function App() {
       try {
         const { App } = await import('@capacitor/app');
         const listener = await App.addListener('backButton', ({ canGoBack }: { canGoBack: boolean }) => {
-          if (showBookDetailModal) {
+          if (showGenreView) {
+            setShowGenreView(false);
+            setActiveGenre(null);
+          } else if (showBookDetailModal) {
             setShowBookDetailModal(false);
           } else if (showOfflineManagerModal) {
             setShowOfflineManagerModal(false);
@@ -202,7 +217,7 @@ export default function App() {
 
     setupBackButton();
     return () => { cleanup?.(); };
-  }, [showBookDetailModal, showOfflineManagerModal, showCarModeModal, showBookmarksModal, showVoiceEnhancerModal, showSleepTimerModal, showEbookReader, showFullPlayer, activeTab]);
+  }, [showGenreView, showBookDetailModal, showOfflineManagerModal, showCarModeModal, showBookmarksModal, showVoiceEnhancerModal, showSleepTimerModal, showEbookReader, showFullPlayer, activeTab]);
 
   // Save state
   useEffect(() => {
@@ -479,6 +494,13 @@ export default function App() {
     setShowBookDetailModal(true);
   };
 
+  const handleOpenGenre = (genreId: string) => {
+    const genre = LIBRIVOX_GENRES.find((g) => g.id === genreId) || null;
+    if (!genre) return;
+    setActiveGenre(genre);
+    setShowGenreView(true);
+  };
+
   const handleRefreshFeed = () => {
     setIsLoadingFeed(true);
     setTimeout(() => {
@@ -599,6 +621,28 @@ export default function App() {
 
   return (
     <div id="libriaudio-app-root" className="fixed inset-0 bg-[var(--bg)] text-[var(--text-main)] flex flex-col font-sans overflow-hidden antialiased select-none">
+      {/* App Intro Splash Animation */}
+      {showIntro && (
+        <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-[var(--bg)] text-[var(--text-main)] overflow-hidden">
+          <div className="flex flex-col items-center gap-5 px-8 text-center">
+            <div className="intro-logo-anim">
+              <AppLogo className="w-24 h-24 rounded-3xl shadow-2xl shadow-[rgba(var(--accent-rgb),0.4)]" />
+            </div>
+            <div className="intro-text-anim">
+              <h1 className="text-4xl font-serif-display italic font-bold tracking-wide bg-clip-text text-transparent bg-gradient-to-r from-[var(--accent)] to-[var(--accent-hover)]">
+                LibreAudio
+              </h1>
+            </div>
+            <p className="intro-tagline-anim text-sm text-[var(--text-dim)] font-sans">
+              Free audiobooks from the public domain
+            </p>
+            <div className="intro-tagline-anim mt-4 w-40 h-0.5 rounded-full bg-[var(--accent-dim)] overflow-hidden">
+              <div className="intro-progress-anim h-full w-full text-[var(--accent)]" />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Background Audio Engine */}
       <AudioEngine
         playerState={playerState}
@@ -662,36 +706,9 @@ export default function App() {
         </div>
       )}
 
-      {/* Top Universal App Navigation Bar */}
-      <header
-        id="app-top-header"
-        className="h-16 px-4 md:px-8 border-b border-[var(--border-subtle)] bg-[var(--bg)] flex items-center justify-between shrink-0 z-20"
-      >
-        {/* Brand Logo & Title (Headphone Gradient Logo) */}
-        <div
-          onClick={() => setActiveTab('explore')}
-          className="flex items-center gap-3 cursor-pointer group"
-          title="LibriAudio Home"
-        >
-          <AppLogo className="w-10 h-10 transition-transform group-hover:scale-105" />
-          <div>
-            <h1 className="text-lg font-serif-display italic font-bold text-[var(--text-main)] tracking-wide group-hover:text-[var(--accent)] transition-colors">
-              LibriAudio
-            </h1>
-            <p className="text-[11px] text-[var(--text-dim)] hidden md:block">
-              Audiobooks & Ebook Reader
-            </p>
-          </div>
-        </div>
-
-        {/* Right Action Tools */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
-        </div>
-      </header>
-
       {/* Main Content Viewport */}
       <main className="flex-1 relative overflow-hidden bg-[var(--bg)] flex flex-col">
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto pt-[max(env(safe-area-inset-top),1.5rem)] pb-36">
           {isLoadingFeed ? (
             <Skeleton />
           ) : (
@@ -699,7 +716,6 @@ export default function App() {
               {activeTab === 'explore' && (
                 <div className="max-w-6xl mx-auto w-full p-4 md:p-8">
                   <ExploreView
-                    books={catalog}
                     currentBook={playerState.currentBook}
                     history={playerState.history}
                     savedBooks={playerState.savedBooks}
@@ -718,6 +734,7 @@ export default function App() {
                     onSelectBook={handleOpenBookDetails}
                     onReadBook={handleOpenEbookReader}
                     onUploadEpub={handleUploadEpub}
+                    onOpenGenre={handleOpenGenre}
                   />
                 </div>
               )}
@@ -756,9 +773,9 @@ export default function App() {
           )}
         </div>
 
-        {/* Persistent Bottom Mini Player Widget */}
-        <div className="shrink-0 bg-[var(--surface)] border-t border-[var(--border-subtle)] px-4 md:px-8 py-2 z-20">
-          <div className="max-w-6xl mx-auto">
+        {/* Floating Bottom Mini Player Widget (overlay, transparent around the card) */}
+        <div className="fixed left-0 right-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] px-4 md:px-8 z-30 pointer-events-none">
+          <div className="max-w-6xl mx-auto pointer-events-auto">
             <MiniPlayerWidget
               playerState={playerState}
               onOpenFullPlayer={() => setShowFullPlayer(true)}
@@ -781,7 +798,7 @@ export default function App() {
               onClick={() => setActiveTab('explore')}
               className={`flex items-center justify-center w-12 sm:w-14 h-10 rounded-2xl transition-all duration-200 ${
                 activeTab === 'explore'
-                  ? 'bg-[var(--accent)] text-black shadow-lg shadow-[rgba(var(--accent-rgb),0.3)] scale-105'
+                  ? 'bg-[var(--accent)] text-[var(--on-accent)] shadow-lg shadow-[rgba(var(--accent-rgb),0.3)] scale-105'
                   : 'text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
               }`}
               title="Explore"
@@ -795,7 +812,7 @@ export default function App() {
               onClick={() => setActiveTab('search')}
               className={`flex items-center justify-center w-12 sm:w-14 h-10 rounded-2xl transition-all duration-200 ${
                 activeTab === 'search'
-                  ? 'bg-[var(--accent)] text-black shadow-lg shadow-[rgba(var(--accent-rgb),0.3)] scale-105'
+                  ? 'bg-[var(--accent)] text-[var(--on-accent)] shadow-lg shadow-[rgba(var(--accent-rgb),0.3)] scale-105'
                   : 'text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
               }`}
               title="Search"
@@ -809,7 +826,7 @@ export default function App() {
               onClick={() => setActiveTab('library')}
               className={`flex items-center justify-center w-12 sm:w-14 h-10 rounded-2xl transition-all duration-200 ${
                 activeTab === 'library'
-                  ? 'bg-[var(--accent)] text-black shadow-lg shadow-[rgba(var(--accent-rgb),0.3)] scale-105'
+                  ? 'bg-[var(--accent)] text-[var(--on-accent)] shadow-lg shadow-[rgba(var(--accent-rgb),0.3)] scale-105'
                   : 'text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
               }`}
               title="Library"
@@ -823,7 +840,7 @@ export default function App() {
               onClick={() => setActiveTab('stats')}
               className={`flex items-center justify-center w-12 sm:w-14 h-10 rounded-2xl transition-all duration-200 ${
                 activeTab === 'stats'
-                  ? 'bg-[var(--accent)] text-black shadow-lg shadow-[rgba(var(--accent-rgb),0.3)] scale-105'
+                  ? 'bg-[var(--accent)] text-[var(--on-accent)] shadow-lg shadow-[rgba(var(--accent-rgb),0.3)] scale-105'
                   : 'text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
               }`}
               title="Stats & Author Rankings"
@@ -837,7 +854,7 @@ export default function App() {
               onClick={() => setActiveTab('settings')}
               className={`flex items-center justify-center w-12 sm:w-14 h-10 rounded-2xl transition-all duration-200 ${
                 activeTab === 'settings'
-                  ? 'bg-[var(--accent)] text-black shadow-lg shadow-[rgba(var(--accent-rgb),0.3)] scale-105'
+                  ? 'bg-[var(--accent)] text-[var(--on-accent)] shadow-lg shadow-[rgba(var(--accent-rgb),0.3)] scale-105'
                   : 'text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
               }`}
               title="Settings & Preferences"
@@ -889,6 +906,20 @@ export default function App() {
           onForward30={handleForward30}
           onSkipNext={handleSkipNext}
           onSetSpeed={handleSetSpeed}
+        />
+      )}
+
+      {/* Genre Browse (Spotify-style full-screen view) */}
+      {showGenreView && (
+        <GenreView
+          genre={activeGenre}
+          open={showGenreView}
+          onClose={() => {
+            setShowGenreView(false);
+            setActiveGenre(null);
+          }}
+          onSelectBook={handleOpenBookDetails}
+          onReadBook={handleOpenEbookReader}
         />
       )}
 

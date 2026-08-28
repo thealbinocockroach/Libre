@@ -194,7 +194,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                 onClick={() => onToggleSaveBook(currentActiveBook)}
                 className={`p-2 rounded-xl transition-all ${
                   isSaved
-                    ? 'bg-[var(--accent)] text-black shadow-md'
+                    ? 'bg-[var(--accent)] text-[var(--on-accent)] shadow-md'
                     : 'bg-[var(--surface-raised)] hover:bg-[var(--surface-raised)] text-[var(--text-main)] hover:text-[var(--text-main)] border border-[var(--border-subtle)]'
                 }`}
                 title={isSaved ? 'Saved in Library' : 'Save to Library'}
@@ -288,7 +288,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                   <button
                     id={`btn-play-book-detail-${currentActiveBook.id}`}
                     onClick={handlePrimaryPlayClick}
-                    className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black text-xs font-bold shadow-[0_0_20px_rgba(var(--accent-rgb),0.35)] transition-all active:scale-95"
+                    className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--on-accent)] text-xs font-bold shadow-[0_0_20px_rgba(var(--accent-rgb),0.35)] transition-all active:scale-95"
                   >
                     {isPlaying ? (
                       <>
@@ -404,7 +404,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                 onClick={() => setActiveTab('info')}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap ${
                   activeTab === 'info'
-                    ? 'bg-[var(--accent)] text-black shadow-md'
+                    ? 'bg-[var(--accent)] text-[var(--on-accent)] shadow-md'
                     : 'text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
                 }`}
               >
@@ -417,7 +417,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                 onClick={() => setActiveTab('chapters')}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap ${
                   activeTab === 'chapters'
-                    ? 'bg-[var(--accent)] text-black shadow-md'
+                    ? 'bg-[var(--accent)] text-[var(--on-accent)] shadow-md'
                     : 'text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
                 }`}
               >
@@ -430,7 +430,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                 onClick={() => setActiveTab('notes')}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap ${
                   activeTab === 'notes'
-                    ? 'bg-[var(--accent)] text-black shadow-md'
+                    ? 'bg-[var(--accent)] text-[var(--on-accent)] shadow-md'
                     : 'text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
                 }`}
               >
@@ -441,7 +441,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                     className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                       activeTab === 'notes'
                         ? 'bg-black text-[var(--accent)]'
-                        : 'bg-[var(--accent)] text-black'
+                        : 'bg-[var(--accent)] text-[var(--on-accent)]'
                     }`}
                   >
                     {bookNotes.length}
@@ -516,7 +516,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                               }}
                               className={`px-2 py-1 rounded-md text-[10px] font-mono font-bold transition-all cursor-pointer ${
                                 isQActive
-                                  ? 'bg-[var(--accent)] text-black shadow-sm'
+                                  ? 'bg-[var(--accent)] text-[var(--on-accent)] shadow-sm'
                                   : 'text-[var(--text-dim)] hover:text-[var(--text-main)]'
                               }`}
                             >
@@ -579,8 +579,8 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                           <button
                             className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-all ${
                               isTrackActive
-                                ? 'bg-[var(--accent)] text-black shadow-md'
-                                : 'bg-[var(--surface-raised)] hover:bg-[var(--accent)] text-[var(--text-main)] hover:text-black'
+                                ? 'bg-[var(--accent)] text-[var(--on-accent)] shadow-md'
+                                : 'bg-[var(--surface-raised)] hover:bg-[var(--accent)] text-[var(--text-main)] hover:text-[var(--on-accent)]'
                             }`}
                             title="Play this track"
                           >
@@ -608,7 +608,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                   </div>
                   <button
                     onClick={() => setShowNotesModal(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black text-xs font-semibold shadow-md transition-all active:scale-95 cursor-pointer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--on-accent)] text-xs font-semibold shadow-md transition-all active:scale-95 cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Take Note</span>

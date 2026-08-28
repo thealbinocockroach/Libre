@@ -31,6 +31,10 @@ import {
   getSavedTheme,
   saveThemePreference,
   getSmartAdaptiveResolvedTheme,
+  getSavedCustomTheme,
+  saveCustomThemeColors,
+  previewCustomTheme,
+  CustomThemeInput,
 } from '../utils/themeManager';
 import {
   getDailyGoalMinutes,
@@ -73,6 +77,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onUploadEpub }) => {
   const [resolvedAdaptiveTheme, setResolvedAdaptiveTheme] = useState<ThemeId>(
     getSmartAdaptiveResolvedTheme()
   );
+
+  // Custom theme color editor
+  const [customColors, setCustomColors] = useState<CustomThemeInput>(getSavedCustomTheme());
+  const [customSavedNote, setCustomSavedNote] = useState(false);
+  const [isCustomEditorOpen, setIsCustomEditorOpen] = useState(false);
 
   // Font customization state
   const [fontConfig, setFontConfig] = useState<AppFontConfig>(getSavedFontConfig());
@@ -142,6 +151,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onUploadEpub }) => {
     setCurrentTheme(themeId);
     saveThemePreference(themeId);
     setResolvedAdaptiveTheme(getSmartAdaptiveResolvedTheme());
+  };
+
+  const handleOpenCustomEditor = () => {
+    setCustomColors(getSavedCustomTheme());
+    setIsCustomEditorOpen(true);
+    setCurrentTheme('custom');
+    saveThemePreference('custom');
+  };
+
+  const handleUpdateCustomColor = (key: keyof CustomThemeInput, value: string) => {
+    const next = { ...customColors, [key]: value };
+    setCustomColors(next);
+    // Live preview the change on the DOM (without persisting yet)
+    previewCustomTheme(next);
+  };
+
+  const handleSaveCustomTheme = () => {
+    saveCustomThemeColors(customColors);
+    setCurrentTheme('custom');
+    saveThemePreference('custom');
+    setCustomSavedNote(true);
+    setTimeout(() => setCustomSavedNote(false), 2000);
   };
 
   const handleUpdateFont = (partial: Partial<AppFontConfig>) => {
@@ -242,12 +273,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onUploadEpub }) => {
                 {themeList.map((theme) => {
                   const isSelected = currentTheme === theme.id;
                   const isAdaptive = theme.id === 'smart-adaptive';
+                  const isCustom = theme.id === 'custom';
+                  const swatches = isCustom
+                    ? [customColors.bg, customColors.surface, customColors.accent]
+                    : theme.previewColors;
 
                   return (
                     <button
                       key={theme.id}
                       id={`btn-theme-${theme.id}`}
-                      onClick={() => handleSelectTheme(theme.id)}
+                      onClick={() => (isCustom ? handleOpenCustomEditor() : handleSelectTheme(theme.id))}
                       className={`p-3.5 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between ${
                         isSelected
                           ? 'border-[var(--accent)] bg-[var(--surface-raised)] shadow-lg shadow-[rgba(var(--accent-rgb),0.3)]'
@@ -258,19 +293,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onUploadEpub }) => {
                         <div className="flex items-center gap-1.5 p-1 rounded-lg bg-black/40 border border-[var(--border-subtle)]">
                           <div
                             className="w-3.5 h-3.5 rounded-full border border-[var(--border-subtle)]"
-                            style={{ backgroundColor: theme.previewColors[0] }}
+                            style={{ backgroundColor: swatches[0] }}
                           />
                           <div
                             className="w-3.5 h-3.5 rounded-full border border-[var(--border-subtle)]"
-                            style={{ backgroundColor: theme.previewColors[1] }}
+                            style={{ backgroundColor: swatches[1] }}
                           />
                           <div
                             className="w-3.5 h-3.5 rounded-full border border-[var(--border-subtle)]"
-                            style={{ backgroundColor: theme.previewColors[2] }}
+                            style={{ backgroundColor: swatches[2] }}
                           />
                         </div>
                         {isSelected && (
-                          <span className="w-4 h-4 rounded-full bg-[var(--accent)] text-black flex items-center justify-center text-[10px]">
+                          <span className="w-4 h-4 rounded-full bg-[var(--accent)] text-[var(--on-accent)] flex items-center justify-center text-[10px]">
                             <Check className="w-3 h-3 stroke-[3]" />
                           </span>
                         )}
@@ -306,6 +341,96 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onUploadEpub }) => {
                   );
                 })}
               </div>
+
+              {/* Custom Color Studio — appears when Custom theme is active */}
+              {currentTheme === 'custom' && (
+                <div className="mt-4 pt-4 border-t border-[var(--border-subtle)] space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-[var(--text-main)] uppercase tracking-wider">
+                      Custom Color Studio
+                    </h4>
+                    {customSavedNote && (
+                      <span className="text-[10px] font-semibold text-[var(--success)] flex items-center gap-1">
+                        <Check className="w-3 h-3 stroke-[3]" /> Saved
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-[var(--text-dim)] leading-relaxed">
+                    Pick your own palette. Changes preview instantly across the app,
+                    including the full-screen player and menus.
+                  </p>
+
+                  {(
+                    [
+                      { key: 'bg', label: 'Background', hint: 'Base app & player backdrop' },
+                      { key: 'surface', label: 'Panels', hint: 'Cards, menus & raised surfaces' },
+                      { key: 'accent', label: 'Accent', hint: 'Buttons, highlights & icons' },
+                      { key: 'textMain', label: 'Text', hint: 'Primary text color' },
+                    ] as { key: keyof CustomThemeInput; label: string; hint: string }[]
+                  ).map((f) => (
+                    <div key={f.key} className="flex items-center gap-3">
+                      <label className="relative w-11 h-11 rounded-xl overflow-hidden border border-[var(--border-subtle)] shrink-0 cursor-pointer">
+                        <input
+                          type="color"
+                          value={customColors[f.key]}
+                          onChange={(e) => handleUpdateCustomColor(f.key, e.target.value)}
+                          className="absolute inset-0 w-full h-full cursor-pointer opacity-0"
+                          aria-label={`${f.label} color`}
+                        />
+                        <span
+                          className="absolute inset-0"
+                          style={{ backgroundColor: customColors[f.key] }}
+                        />
+                      </label>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-medium text-[var(--text-main)]">{f.label}</div>
+                        <div className="text-[10px] text-[var(--text-dim)] truncate">{f.hint}</div>
+                      </div>
+                      <span className="font-mono text-[10px] text-[var(--text-dim)] uppercase">
+                        {customColors[f.key]}
+                      </span>
+                    </div>
+                  ))}
+
+                  {/* Live preview (uses applied CSS vars so it matches current preview) */}
+                  <div
+                    className="p-3 rounded-xl border border-[var(--border-subtle)] space-y-2"
+                    style={{ backgroundColor: 'var(--surface)', color: 'var(--text-main)' }}
+                  >
+                    <div className="text-[11px] font-semibold">Live Preview</div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="w-9 h-9 rounded-lg flex items-center justify-center font-bold text-sm shadow-md shrink-0"
+                        style={{ backgroundColor: 'var(--accent)', color: 'var(--on-accent)' }}
+                      >
+                        Aa
+                      </span>
+                      <span className="text-[10px] opacity-70 leading-snug">
+                        This is how the app will look with your palette, from menus to the player.
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleSaveCustomTheme}
+                      className="flex-1 px-4 py-2.5 rounded-xl text-xs font-bold transition-all active:scale-95 shadow-lg"
+                      style={{ backgroundColor: 'var(--accent)', color: 'var(--on-accent)' }}
+                    >
+                      Apply & Save Custom Theme
+                    </button>
+                    <button
+                      onClick={() => {
+                        const fallback: ThemeId = getSavedTheme() !== 'custom' ? getSavedTheme() : 'midnight-gold';
+                        handleSelectTheme(fallback);
+                      }}
+                      className="px-4 py-2.5 rounded-xl border border-[var(--border-subtle)] text-xs font-semibold text-[var(--text-dim)] hover:text-[var(--text-main)] transition-all"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -533,7 +658,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onUploadEpub }) => {
                     onClick={() => handleUpdateGoal(preset)}
                     className={`py-2.5 px-2 rounded-xl text-xs font-mono font-bold transition-all border ${
                       goalMinutes === preset
-                        ? 'bg-[var(--accent)] text-black border-[var(--accent)] shadow-md shadow-[rgba(var(--accent-rgb),0.3)]'
+                        ? 'bg-[var(--accent)] text-[var(--on-accent)] border-[var(--accent)] shadow-md shadow-[rgba(var(--accent-rgb),0.3)]'
                         : 'bg-[var(--surface-raised)] text-[var(--text-main)] hover:text-[var(--text-main)] border-[var(--border-subtle)] hover:border-[var(--border-subtle)]'
                     }`}
                   >
@@ -559,7 +684,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onUploadEpub }) => {
               </div>
               <button
                 onClick={() => handleUpdateGoal(customGoalInput)}
-                className="px-5 py-2.5 rounded-xl bg-[var(--accent)] text-black font-semibold text-xs hover:bg-[var(--accent-hover)] transition-colors"
+                className="px-5 py-2.5 rounded-xl bg-[var(--accent)] text-[var(--on-accent)] font-semibold text-xs hover:bg-[var(--accent-hover)] transition-colors"
               >
                 Set Custom
               </button>
@@ -605,7 +730,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onUploadEpub }) => {
             
             <button
               onClick={handleSaveProfile}
-              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[var(--accent)] text-black font-semibold hover:bg-[var(--accent-hover)] transition-colors flex items-center justify-center gap-2 text-sm"
+              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[var(--accent)] text-[var(--on-accent)] font-semibold hover:bg-[var(--accent-hover)] transition-colors flex items-center justify-center gap-2 text-sm"
             >
               {isSaved ? (
                 <>

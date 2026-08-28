@@ -182,7 +182,7 @@ export const ApkExportModal: React.FC<ApkExportModalProps> = ({ isOpen, onClose 
                   id="btn-download-project-zip"
                   onClick={handleDownloadZip}
                   disabled={isZipping}
-                  className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black font-semibold text-xs transition-all shadow-[0_0_20px_rgba(var(--accent-rgb),0.35)] flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+                  className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--on-accent)] font-semibold text-xs transition-all shadow-[0_0_20px_rgba(var(--accent-rgb),0.35)] flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
                 >
                   {isZipping ? (
                     <>
@@ -357,7 +357,7 @@ export const ApkExportModal: React.FC<ApkExportModalProps> = ({ isOpen, onClose 
             </button>
             <button
               onClick={handleDownloadZip}
-              className="px-4 py-1.5 rounded-lg bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black font-semibold text-xs transition-all shadow-[0_0_12px_rgba(var(--accent-rgb),0.3)] flex items-center gap-1.5 active:scale-95"
+              className="px-4 py-1.5 rounded-lg bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--on-accent)] font-semibold text-xs transition-all shadow-[0_0_12px_rgba(var(--accent-rgb),0.3)] flex items-center gap-1.5 active:scale-95"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Download Project ZIP</span>

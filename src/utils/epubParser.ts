@@ -9,8 +9,8 @@ export function splitManuscriptIntoChapters(rawContent: string, bookTitle: strin
     return [{ id: 'ch_1', title: bookTitle || 'Chapter 1', content: '<p>Manuscript text ready.</p>' }];
   }
 
-  // 1. Strip Project Gutenberg header / footer if present
-  let clean = rawContent;
+  // 0. Normalize all line endings (CRLF / CR -> LF) so downstream \n handling is universal
+  let clean = rawContent.replace(/\r\n?/g, '\n');
   const startGutenbergMarker = clean.search(/\*\*\*\s*START OF (?:THE|THIS) PROJECT GUTENBERG EBOOK[^\*]*\*\*\*/i);
   if (startGutenbergMarker !== -1) {
     const afterMarker = clean.indexOf('\n', startGutenbergMarker);
@@ -78,7 +78,7 @@ export function splitManuscriptIntoChapters(rawContent: string, bookTitle: strin
         const paragraphs = chunk
           .split(/\n\s*\n/)
           .filter((p) => p.trim().length > 0)
-          .map((p) => `<p>${p.trim().replace(/\n/g, '<br/>')}</p>`)
+          .map((p) => `<p>${p.trim().replace(/\n/g, ' ')}</p>`)
           .join('');
 
         chapters.push({
@@ -92,13 +92,14 @@ export function splitManuscriptIntoChapters(rawContent: string, bookTitle: strin
 
   // Fallback: If still single block and lengthy, split into readable sections (~3000 words each)
   if (chapters.length <= 1) {
-    const formatted = isHtml
-      ? clean
-      : clean
-          .split(/\n\s*\n/)
-          .filter(Boolean)
-          .map((p) => `<p>${p.replace(/\n/g, '<br/>')}</p>`)
-          .join('');
+    const plainForFallback = isHtml
+      ? clean.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|h[1-6]|li|section|article)>/gi, '\n\n').replace(/<[^>]*>/g, ' ')
+      : clean;
+    const formatted = plainForFallback
+      .split(/\n\s*\n/)
+      .filter(Boolean)
+      .map((p) => `<p>${p.replace(/\n/g, ' ')}</p>`)
+      .join('');
 
     if (formatted.length > 25000) {
       const pTags = formatted.split(/(?=<p>)/i);

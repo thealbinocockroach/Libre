@@ -8,6 +8,13 @@ const STORE_BOOKS = 'offline_books';
 const STORE_TRACKS = 'offline_tracks';
 const STORE_EBOOKS = 'offline_ebooks';
 
+function isNativeAndroid(): boolean {
+  return (
+    typeof (window as any).Capacitor?.isNativePlatform === 'function' &&
+    !!(window as any).Capacitor?.isNativePlatform?.()
+  );
+}
+
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') {
@@ -425,6 +432,21 @@ export async function downloadAudiobook(
       ? optionsOrProgress
       : optionsOrProgress?.onProgress;
 
+  // On native Android, delegate to the foreground-service download engine so
+  // we get real streaming progress, a progress notification, and downloads that
+  // keep running after leaving the page. All finished tracks are still written
+  // into the same IndexedDB stores so offline playback works identically.
+  if (isNativeAndroid()) {
+    const { downloadBookNative } = await import('./downloadNative');
+    await downloadBookNative(book, {
+      trackIds,
+      onProgress: (p) => {
+        if (onProgress) onProgress(p.percent, p.bytesLoaded, p.trackTitle);
+      },
+    });
+    return;
+  }
+
   // Resolve full tracklist if book currently only contains 1 preview track
   let activeBook = book;
   if (!activeBook.tracks || activeBook.tracks.length <= 1) {
@@ -585,6 +607,105 @@ export async function downloadAudiobook(
   if (typeof window !== 'undefined') {
     window.dispatchEvent(
       new CustomEvent('libriaudio_offline_updated', { detail: { bookId: activeBook.id } })
+    );
+  }
+}
+
+/* =========================================================================
+   NATIVE DOWNLOAD PATH (Android foreground service -> IndexedDB)
+   The native service streams each track with real progress and writes it to
+   app storage. JS persists each finished track's bytes into the same
+   IndexedDB stores the web player reads from, then the temp file is deleted.
+   ========================================================================= */
+
+export interface NativeTrackPayload {
+  audioUrl: string;
+  trackId: string;
+  trackKey: string;
+  trackNumber: number;
+  title: string;
+  durationSeconds: number;
+}
+
+/**
+ * Persist a single downloaded track blob into IndexedDB and bump the book
+ * record to 'downloading' with progress. Used by the native download path.
+ */
+export async function saveNativeTrack(
+  book: Audiobook,
+  payload: NativeTrackPayload,
+  blob: Blob,
+  progress: number,
+): Promise<void> {
+  const db = await openDB();
+  const trackKey = payload.trackKey;
+
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_TRACKS, 'readwrite');
+    tx.objectStore(STORE_TRACKS).put({
+      trackKey,
+      bookId: book.id,
+      trackId: payload.trackId,
+      trackNumber: payload.trackNumber,
+      title: payload.title,
+      durationSeconds: payload.durationSeconds,
+      blob,
+      sizeBytes: blob.size,
+      savedAt: Date.now(),
+    });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+
+  // Set/refresh the book record as downloading with current progress
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_BOOKS, 'readwrite');
+    const store = tx.objectStore(STORE_BOOKS);
+    const getReq = store.get(book.id);
+    getReq.onsuccess = () => {
+      const existing = getReq.result as OfflineBookData | undefined;
+      const record: OfflineBookData = {
+        bookId: book.id,
+        book,
+        sizeBytes: (existing?.sizeBytes || 0) + blob.size,
+        downloadedAt: Date.now(),
+        status: 'downloading',
+        progress: Math.max(existing?.progress || 0, progress),
+      };
+      store.put(record);
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/**
+ * Finalize a book after a native download finishes (or errors).
+ */
+export async function finalizeNativeBook(
+  book: Audiobook,
+  status: 'ready' | 'partial' | 'error',
+  totalBytes: number,
+): Promise<void> {
+  const db = await openDB();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_BOOKS, 'readwrite');
+    const record: OfflineBookData = {
+      bookId: book.id,
+      book,
+      sizeBytes: Math.max(totalBytes, 1),
+      downloadedAt: Date.now(),
+      status,
+      progress: status === 'ready' || status === 'partial' ? 100 : 0,
+    };
+    tx.objectStore(STORE_BOOKS).put(record);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('libriaudio_offline_updated', { detail: { bookId: book.id } })
     );
   }
 }

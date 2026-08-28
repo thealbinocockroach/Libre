@@ -230,7 +230,7 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
                             onSelectBook(offlineItem.book);
                             onClose();
                           }}
-                          className="p-2 rounded-xl bg-[var(--accent)] text-black font-semibold shadow-md"
+                          className="p-2 rounded-xl bg-[var(--accent)] text-[var(--on-accent)] font-semibold shadow-md"
                           title="Play Offline"
                         >
                           <Play className="w-3.5 h-3.5 fill-current" />
@@ -293,7 +293,7 @@ export const OfflineManagerModal: React.FC<OfflineManagerModalProps> = ({
                         <button
                           id={`btn-start-download-${book.id}`}
                           onClick={() => handleDownload(book)}
-                          className="px-3 py-1.5 rounded-xl bg-[var(--surface-raised)] hover:bg-[var(--accent)] text-[var(--text-main)] hover:text-black border border-[var(--border-subtle)] hover:border-[var(--accent)] text-xs font-semibold flex items-center gap-1.5 transition-all"
+                          className="px-3 py-1.5 rounded-xl bg-[var(--surface-raised)] hover:bg-[var(--accent)] text-[var(--text-main)] hover:text-[var(--on-accent)] border border-[var(--border-subtle)] hover:border-[var(--accent)] text-xs font-semibold flex items-center gap-1.5 transition-all"
                         >
                           <Download className="w-3.5 h-3.5" />
                           <span>{isPartialDownload ? 'Resume' : 'Download'}</span>

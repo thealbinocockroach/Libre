@@ -1,4 +1,4 @@
-package com.libriaudio.app.media;
+package com.libreaudio.app.media;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -11,11 +11,12 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
-import androidx.media.session.MediaButtonReceiver;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.PlaybackParameters;
@@ -36,7 +37,7 @@ public class AudioPlaybackService extends Service {
 
     static AudioPlaybackPlugin pluginRef;
     static AudioPlaybackService instance;
-    static final String CHANNEL_ID = "libriaudio_playback_channel";
+    static final String CHANNEL_ID = "libreaudio_playback_channel";
     static final int NOTIF_ID = 4242;
 
     private ExoPlayer exoPlayer;
@@ -44,10 +45,47 @@ public class AudioPlaybackService extends Service {
     private Bitmap artworkBitmap;
     private String currentArtworkUrl;
 
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Object playerLock = new Object();
+
     private String trackTitle = "";
     private String trackArtist = "";
     private String trackAlbum = "";
     private String artworkUrl = "";
+
+    private void runOnMain(Runnable r) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            r.run();
+        } else {
+            mainHandler.post(r);
+        }
+    }
+
+    private <T> T syncOnMain(final SyncTask<T> task, final T fallback) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            return task.run();
+        }
+        final java.util.concurrent.atomic.AtomicReference<T> result =
+            new java.util.concurrent.atomic.AtomicReference<>(fallback);
+        final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        mainHandler.post(() -> {
+            try {
+                result.set(task.run());
+            } finally {
+                latch.countDown();
+            }
+        });
+        try {
+            latch.await(500, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        return result.get();
+    }
+
+    private interface SyncTask<T> {
+        T run();
+    }
 
     @Override
     public void onCreate() {
@@ -94,7 +132,7 @@ public class AudioPlaybackService extends Service {
     }
 
     private void initMediaSession() {
-        mediaSession = new MediaSessionCompat(this, "LibriAudioPlayback");
+        mediaSession = new MediaSessionCompat(this, "LibreAudioPlayback");
         mediaSession.setFlags(
             MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS |
             MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
@@ -141,60 +179,76 @@ public class AudioPlaybackService extends Service {
     }
 
     public void play() {
-        if (exoPlayer != null) {
-            exoPlayer.setPlayWhenReady(true);
-        }
+        runOnMain(() -> {
+            if (exoPlayer != null) {
+                exoPlayer.setPlayWhenReady(true);
+            }
+        });
     }
 
     public void pause() {
-        if (exoPlayer != null) {
-            exoPlayer.setPlayWhenReady(false);
-        }
+        runOnMain(() -> {
+            if (exoPlayer != null) {
+                exoPlayer.setPlayWhenReady(false);
+            }
+        });
     }
 
     public void seekTo(double positionSeconds) {
-        if (exoPlayer != null) {
-            exoPlayer.seekTo((long) (positionSeconds * 1000));
-        }
+        runOnMain(() -> {
+            if (exoPlayer != null) {
+                exoPlayer.seekTo((long) (positionSeconds * 1000));
+            }
+        });
     }
 
     public void setPlaybackRate(double rate) {
-        if (exoPlayer != null) {
-            exoPlayer.setPlaybackParameters(new PlaybackParameters((float) rate));
-        }
+        runOnMain(() -> {
+            if (exoPlayer != null) {
+                exoPlayer.setPlaybackParameters(new PlaybackParameters((float) rate));
+            }
+        });
     }
 
     public void setVolume(double volume) {
-        if (exoPlayer != null) {
-            exoPlayer.setVolume((float) Math.max(0, Math.min(1, volume)));
-        }
+        runOnMain(() -> {
+            if (exoPlayer != null) {
+                exoPlayer.setVolume((float) Math.max(0, Math.min(1, volume)));
+            }
+        });
     }
 
     public void stop() {
-        if (exoPlayer != null) {
-            exoPlayer.stop();
-        }
+        runOnMain(() -> {
+            if (exoPlayer != null) {
+                exoPlayer.stop();
+            }
+        });
         stopForeground(true);
         stopSelf();
     }
 
     public double getPosition() {
-        if (exoPlayer != null) {
-            return exoPlayer.getCurrentPosition() / 1000.0;
-        }
-        return 0;
+        return syncOnMain(() -> {
+            if (exoPlayer != null) {
+                return exoPlayer.getCurrentPosition() / 1000.0;
+            }
+            return 0.0;
+        }, 0.0);
     }
 
     public double getDuration() {
-        if (exoPlayer != null) {
-            long dur = exoPlayer.getDuration();
-            return dur > 0 ? dur / 1000.0 : 0;
-        }
-        return 0;
+        return syncOnMain(() -> {
+            if (exoPlayer != null) {
+                long dur = exoPlayer.getDuration();
+                return dur > 0 ? dur / 1000.0 : 0.0;
+            }
+            return 0.0;
+        }, 0.0);
     }
 
     public boolean isPlaying() {
-        return exoPlayer != null && exoPlayer.isPlaying();
+        return syncOnMain(() -> exoPlayer != null && exoPlayer.isPlaying(), false);
     }
 
     private void updateMediaMetadata() {
@@ -236,10 +290,19 @@ public class AudioPlaybackService extends Service {
             try {
                 Bitmap bmp = BitmapFactory.decodeStream(new URL(url).openStream());
                 artworkBitmap = bmp;
-                updateMediaMetadata();
-                updateNotification();
+                runOnMain(() -> {
+                    updateMediaMetadata();
+                    updateNotification();
+                });
             } catch (Exception ignored) {}
         }).start();
+    }
+
+    private PendingIntent commandPendingIntent(String command, int requestCode) {
+        Intent intent = new Intent(this, AudioPlaybackService.class);
+        intent.putExtra("command", command);
+        return PendingIntent.getService(this, requestCode, intent,
+            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
     private Notification buildNotification() {
@@ -248,19 +311,19 @@ public class AudioPlaybackService extends Service {
         if (playing) {
             playPause = new NotificationCompat.Action(
                 android.R.drawable.ic_media_pause, "Pause",
-                MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_PAUSE));
+                commandPendingIntent("notifPause", 2001));
         } else {
             playPause = new NotificationCompat.Action(
                 android.R.drawable.ic_media_play, "Play",
-                MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_PLAY));
+                commandPendingIntent("notifPlay", 2002));
         }
 
         NotificationCompat.Action prev = new NotificationCompat.Action(
             android.R.drawable.ic_media_previous, "Previous",
-            MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS));
+            commandPendingIntent("notifPrevious", 2003));
         NotificationCompat.Action next = new NotificationCompat.Action(
             android.R.drawable.ic_media_next, "Next",
-            MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_SKIP_TO_NEXT));
+            commandPendingIntent("notifNext", 2004));
 
         Intent launch = getPackageManager().getLaunchIntentForPackage(getPackageName());
         PendingIntent pending = PendingIntent.getActivity(this, 0, launch,
@@ -292,7 +355,6 @@ public class AudioPlaybackService extends Service {
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         nm.notify(NOTIF_ID, buildNotification());
     }
-
     private void createChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel chan = new NotificationChannel(
@@ -354,6 +416,10 @@ public class AudioPlaybackService extends Service {
                 else if ("pause".equals(cmd)) pause();
                 else if ("stop".equals(cmd)) stop();
                 else if ("seek".equals(cmd)) seekTo(intent.getDoubleExtra("position", 0));
+                else if ("notifPlay".equals(cmd)) emit("play");
+                else if ("notifPause".equals(cmd)) emit("pause");
+                else if ("notifNext".equals(cmd)) emit("next");
+                else if ("notifPrevious".equals(cmd)) emit("previous");
             }
         }
         return START_STICKY;

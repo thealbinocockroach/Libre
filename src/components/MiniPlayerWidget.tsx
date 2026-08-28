@@ -21,11 +21,11 @@ export const MiniPlayerWidget: React.FC<MiniPlayerWidgetProps> = ({
     <div
       id="mini-player-container"
       onClick={onOpenFullPlayer}
-      className="relative w-full bg-[var(--surface)] rounded-xl overflow-hidden cursor-pointer hover:bg-[var(--surface-raised)] transition-all duration-300 group"
+      className="relative w-full bg-[var(--surface)] rounded-2xl ring-1 ring-[var(--border-subtle)] shadow-[0_-4px_20px_rgba(0,0,0,0.25)] overflow-hidden cursor-pointer hover:bg-[var(--surface-raised)] transition-all duration-300 group"
     >
       <div className="flex items-center gap-3 p-2.5 sm:p-3">
         {/* Cover thumbnail */}
-        <div className={`relative w-11 h-11 rounded-lg overflow-hidden shrink-0 bg-[var(--bg)] ${isBuffering ? 'animate-pulse' : ''}`}>
+        <div className={`relative w-11 h-11 overflow-hidden shrink-0 bg-[var(--bg)] ${isBuffering ? 'animate-pulse' : ''}`}>
           <img
             src={currentBook.coverImageUrl}
             alt={currentBook.title}

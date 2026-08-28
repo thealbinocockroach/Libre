@@ -1,6 +1,6 @@
 {
-  "appId": "com.libriaudio.app",
-  "appName": "LibriAudio",
+  "appId": "com.libreaudio.app",
+  "appName": "LibreAudio",
   "webDir": "dist",
   "server": {
     "androidScheme": "https"

@@ -331,7 +331,7 @@ export const ChapterDownloadModal: React.FC<ChapterDownloadModalProps> = ({
               id="btn-confirm-chapter-download"
               onClick={handleStartDownload}
               disabled={selectedTrackIds.length === 0 || isDownloading}
-              className="flex-1 px-4 py-2.5 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-50 text-black text-xs font-bold transition-all shadow-[0_0_20px_rgba(var(--accent-rgb),0.3)] flex items-center justify-center gap-2"
+              className="flex-1 px-4 py-2.5 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-50 text-[var(--on-accent)] text-xs font-bold transition-all shadow-[0_0_20px_rgba(var(--accent-rgb),0.3)] flex items-center justify-center gap-2"
             >
               {isDownloading ? (
                 <span>Downloading {selectedTrackIds.length} Chapters...</span>

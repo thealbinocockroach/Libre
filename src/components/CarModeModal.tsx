@@ -46,7 +46,7 @@ export const CarModeModal: React.FC<CarModeModalProps> = ({
       {/* Top Status Bar */}
       <header className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-4">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-2xl bg-[var(--accent)] text-black">
+          <div className="p-2.5 rounded-2xl bg-[var(--accent)] text-[var(--on-accent)]">
             <Car className="w-6 h-6" />
           </div>
           <div>
@@ -109,7 +109,7 @@ export const CarModeModal: React.FC<CarModeModalProps> = ({
           <button
             id="btn-car-play-pause"
             onClick={onTogglePlayPause}
-            className="w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black shadow-[0_0_40px_rgba(var(--accent-rgb),0.5)] active:scale-90 flex items-center justify-center transition-all"
+            className="w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--on-accent)] shadow-[0_0_40px_rgba(var(--accent-rgb),0.5)] active:scale-90 flex items-center justify-center transition-all"
           >
             {isPlaying ? (
               <Pause className="w-12 h-12 fill-current" />

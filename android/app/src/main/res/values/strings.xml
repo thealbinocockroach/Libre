@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">LibriAudio</string>
-    <string name="title_activity_main">LibriAudio</string>
-    <string name="package_name">com.libriaudio.app</string>
-    <string name="custom_url_scheme">com.libriaudio.app</string>
+    <string name="app_name">LibreAudio</string>
+    <string name="title_activity_main">LibreAudio</string>
+    <string name="package_name">com.libreaudio.app</string>
+    <string name="custom_url_scheme">com.libreaudio.app</string>
 </resources>

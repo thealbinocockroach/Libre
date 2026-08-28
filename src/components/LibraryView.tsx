@@ -322,7 +322,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             <HardDrive className="w-3.5 h-3.5 text-[var(--accent)]" />
             <span>Download Manager</span>
             {readyOffline.length > 0 && (
-              <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-[var(--accent)] text-black text-[10px] font-mono font-bold">
+              <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-[var(--accent)] text-[var(--on-accent)] text-[10px] font-mono font-bold">
                 {readyOffline.length}
               </span>
             )}
@@ -353,7 +353,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           onClick={() => setTab('reading')}
           className={`flex-1 py-1.5 px-2.5 rounded-xl text-[11px] font-semibold transition-all whitespace-nowrap ${
             tab === 'reading'
-              ? 'bg-[var(--accent)] text-black shadow-md'
+              ? 'bg-[var(--accent)] text-[var(--on-accent)] shadow-md'
               : 'text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
           }`}
         >
@@ -364,7 +364,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           onClick={() => setTab('read')}
           className={`flex-1 py-1.5 px-2.5 rounded-xl text-[11px] font-semibold transition-all whitespace-nowrap ${
             tab === 'read'
-              ? 'bg-[var(--accent)] text-black shadow-md'
+              ? 'bg-[var(--accent)] text-[var(--on-accent)] shadow-md'
               : 'text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
           }`}
         >
@@ -375,7 +375,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           onClick={() => setTab('unread')}
           className={`flex-1 py-1.5 px-2.5 rounded-xl text-[11px] font-semibold transition-all whitespace-nowrap ${
             tab === 'unread'
-              ? 'bg-[var(--accent)] text-black shadow-md'
+              ? 'bg-[var(--accent)] text-[var(--on-accent)] shadow-md'
               : 'text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
           }`}
         >
@@ -386,7 +386,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           onClick={() => setTab('offline')}
           className={`flex-1 py-1.5 px-2.5 rounded-xl text-[11px] font-semibold transition-all whitespace-nowrap ${
             tab === 'offline'
-              ? 'bg-[var(--accent)] text-black shadow-md'
+              ? 'bg-[var(--accent)] text-[var(--on-accent)] shadow-md'
               : 'text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
           }`}
         >
@@ -397,7 +397,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           onClick={() => setTab('history')}
           className={`flex-1 py-1.5 px-2.5 rounded-xl text-[11px] font-semibold transition-all whitespace-nowrap ${
             tab === 'history'
-              ? 'bg-[var(--accent)] text-black shadow-md'
+              ? 'bg-[var(--accent)] text-[var(--on-accent)] shadow-md'
               : 'text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
           }`}
         >
@@ -408,7 +408,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           onClick={() => setTab('bookmarks')}
           className={`flex-1 py-1.5 px-2.5 rounded-xl text-[11px] font-semibold transition-all whitespace-nowrap ${
             tab === 'bookmarks'
-              ? 'bg-[var(--accent)] text-black shadow-md'
+              ? 'bg-[var(--accent)] text-[var(--on-accent)] shadow-md'
               : 'text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
           }`}
         >
@@ -533,7 +533,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                   </p>
                   <button
                     onClick={onOpenOfflineManager}
-                    className="mt-3 px-3 py-1.5 rounded-xl bg-[var(--accent)] text-black text-xs font-semibold"
+                    className="mt-3 px-3 py-1.5 rounded-xl bg-[var(--accent)] text-[var(--on-accent)] text-xs font-semibold"
                   >
                     Open Download Manager
                   </button>
@@ -609,7 +609,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                           </button>
                         )}
                         <button
-                          className="w-8 h-8 rounded-xl bg-[var(--accent)] text-black flex items-center justify-center transition-all shadow-md"
+                          className="w-8 h-8 rounded-xl bg-[var(--accent)] text-[var(--on-accent)] flex items-center justify-center transition-all shadow-md"
                           title="Play Cached Audio"
                         >
                           <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
@@ -691,7 +691,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                               e.stopPropagation();
                               onReadBook(reconstructedBook);
                             }}
-                            className="px-3 py-1.5 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black text-xs font-semibold flex items-center gap-1 shadow-md transition-all"
+                            className="px-3 py-1.5 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--on-accent)] text-xs font-semibold flex items-center gap-1 shadow-md transition-all"
                             title="Read Offline Ebook"
                           >
                             <BookOpen className="w-3.5 h-3.5" />
@@ -834,7 +834,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                         {onReadBook && (
                           <button
                             onClick={() => onReadBook(reconstructedBook)}
-                            className="px-3 py-1.5 rounded-xl bg-[var(--surface-raised)] hover:bg-[var(--accent)] text-[var(--text-main)] hover:text-black border border-[var(--border-subtle)] hover:border-[var(--accent)] text-xs font-semibold flex items-center gap-1 transition-all"
+                            className="px-3 py-1.5 rounded-xl bg-[var(--surface-raised)] hover:bg-[var(--accent)] text-[var(--text-main)] hover:text-[var(--on-accent)] border border-[var(--border-subtle)] hover:border-[var(--accent)] text-xs font-semibold flex items-center gap-1 transition-all"
                             title="Resume Reading Ebook"
                           >
                             <BookOpen className="w-3.5 h-3.5" />

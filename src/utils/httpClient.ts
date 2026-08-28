@@ -1,7 +1,23 @@
+import { CapacitorHttp } from '@capacitor/core';
+
 const UA = 'LibriAudio/1.0 (Android; +https://libriaudio.app)';
 const isCap = (): boolean =>
   typeof (window as any).Capacitor?.isNativePlatform === 'function' &&
   !!(window as any).Capacitor?.isNativePlatform?.();
+
+function base64ToBlob(b64: string, mime = 'application/octet-stream'): Blob {
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
+
+function base64ToArrayBuffer(b64: string): ArrayBuffer {
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr.buffer;
+}
 
 export class HttpError extends Error {
   constructor(
@@ -85,17 +101,27 @@ export async function httpGet(
   for (let attempt = 1; attempt <= retries + 1; attempt++) {
     try {
       if (isCap()) {
-        const { Http } = await import('@capacitor-community/http');
+        const responseType = as === 'json' ? 'json' : as === 'text' ? 'text' : 'blob';
         const acceptHeader =
           as === 'json' ? 'application/json, */*' : mergedHeaders['Accept'] || '*/*';
-        const resp = await Http.request({
+        const resp = await CapacitorHttp.request({
           method: 'GET',
           url,
           headers: { ...mergedHeaders, Accept: acceptHeader },
+          responseType: responseType as any,
         });
         const status = resp.status ?? 0;
         if (status >= 200 && status < 400) {
-          const data = as === 'json' ? resp.data : typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data);
+          let data: any;
+          if (as === 'json') {
+            data = typeof resp.data === 'string' ? JSON.parse(resp.data) : resp.data;
+          } else if (as === 'text') {
+            data = typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data);
+          } else if (as === 'blob') {
+            data = typeof resp.data === 'string' ? base64ToBlob(resp.data) : resp.data;
+          } else if (as === 'arrayBuffer') {
+            data = typeof resp.data === 'string' ? base64ToArrayBuffer(resp.data) : resp.data;
+          }
           return { ok: true, data, status, attempts: attempt };
         }
         lastErr = new Error(`HTTP ${status}`);

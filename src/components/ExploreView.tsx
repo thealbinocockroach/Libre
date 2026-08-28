@@ -1,34 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Audiobook } from '../types';
 import {
-  Sparkles,
   Play,
-  Clock,
   BookOpen,
   RefreshCw,
-  Search,
-  Flame,
   Shuffle,
   ChevronRight,
   ChevronLeft,
   Radio,
-  User,
-  Download,
-  Check,
 } from 'lucide-react';
 import {
-  LIBRIVOX_GENRES,
-  GenreCategory,
   RecommendationSection,
   fetchLibriVoxCategory,
   fetchDynamicPersonalizedRecommendations,
   resolveFullTracklist,
   getContinueListeningBook,
-  getRelatedFromCatalog,
-  pickHistorySeed,
 } from '../utils/librivoxRecommendations';
-import { INITIAL_AUDIOBOOKS } from '../data/mockCatalog';
-import { downloadAudiobook, isBookDownloaded } from '../utils/offlineStorage';
+import { isBookDownloaded } from '../utils/offlineStorage';
 
 function formatRemaining(secs: number): string {
   const s = Math.max(0, Math.floor(secs));
@@ -39,7 +27,6 @@ function formatRemaining(secs: number): string {
 }
 
 interface ExploreViewProps {
-  books: Audiobook[];
   currentBook: Audiobook | null;
   history: Audiobook[];
   savedBooks: Audiobook[];
@@ -51,7 +38,6 @@ interface ExploreViewProps {
 }
 
 export const ExploreView: React.FC<ExploreViewProps> = ({
-  books,
   currentBook,
   history,
   savedBooks,
@@ -61,15 +47,11 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   onReadBook,
   onUploadEpub,
 }) => {
-  const [selectedGenre, setSelectedGenre] = useState<GenreCategory>(LIBRIVOX_GENRES[0]);
-  const [genreBooks, setGenreBooks] = useState<Audiobook[]>([]);
-  const [isLoadingGenre, setIsLoadingGenre] = useState(false);
   const [dynamicSections, setDynamicSections] = useState<RecommendationSection[]>([]);
   const [isLoadingSections, setIsLoadingSections] = useState(false);
   const [surpriseBook, setSurpriseBook] = useState<Audiobook | null>(null);
   const [isRollingSurprise, setIsRollingSurprise] = useState(false);
   const [profileName, setProfileName] = useState<string>('');
-  const [downloadProgressMap, setDownloadProgressMap] = useState<Record<string, number>>({});
   const [downloadedStatusMap, setDownloadedStatusMap] = useState<Record<string, boolean>>({});
   const [refreshTick, setRefreshTick] = useState(0);
 
@@ -78,19 +60,18 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     [currentBook, history]
   );
 
-  const becauseYouListened = React.useMemo<RecommendationSection | null>(() => {
-    const seed = pickHistorySeed(history, continueResult?.book.id);
-    if (!seed) return null;
-    const related = getRelatedFromCatalog(seed, INITIAL_AUDIOBOOKS, 12);
-    if (related.length === 0) return null;
+  // "Books You Read" — the actual titles from the reader's history (no canned books).
+  const readBooks = React.useMemo<RecommendationSection | null>(() => {
+    const unique = Array.from(new Map<string, Audiobook>(history.map((b) => [b.id, b])).values());
+    if (unique.length === 0) return null;
     return {
-      id: 'because-you-listened',
-      title: `Because you listened to ${seed.title}`,
-      subtitle: `More recordings from ${seed.author} and similar classics`,
-      badge: 'From your history',
-      books: related,
+      id: 'books-you-read',
+      title: 'Books You Read',
+      subtitle: 'Titles from your listening history — jump back in anytime',
+      badge: 'Your library',
+      books: unique.slice(0, 16),
     };
-  }, [history, continueResult]);
+  }, [history]);
 
   useEffect(() => {
     const savedName = localStorage.getItem('libriaudio_profile_name');
@@ -138,43 +119,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     };
   }, [currentBook?.id, history.length, savedBooks.length, refreshTick]);
 
-  // Load genre recommendations
-  useEffect(() => {
-    let isMounted = true;
-
-    if (selectedGenre.id === 'all') {
-      const uniqueBooks: Audiobook[] = Array.from(new Map<string, Audiobook>(books.map(b => [b.title, b])).values());
-      setGenreBooks(uniqueBooks);
-      checkStatusForBooks(uniqueBooks);
-      return;
-    }
-
-    const loadGenreBooks = async () => {
-      setIsLoadingGenre(true);
-      try {
-        const fetched = await fetchLibriVoxCategory(selectedGenre.query, 10);
-        if (isMounted && fetched.length > 0) {
-          const uniqueFetched: Audiobook[] = Array.from(new Map<string, Audiobook>(fetched.map(b => [b.title, b])).values());
-          setGenreBooks(uniqueFetched);
-          checkStatusForBooks(uniqueFetched);
-        }
-      } catch (err) {
-        console.warn(`Genre fetch error for ${selectedGenre.label}:`, err);
-        if (isMounted) {
-          const uniqueBooks: Audiobook[] = Array.from(new Map<string, Audiobook>(books.map(b => [b.title, b])).values());
-          setGenreBooks(uniqueBooks);
-          checkStatusForBooks(uniqueBooks);
-        }
-      } finally {
-        if (isMounted) setIsLoadingGenre(false);
-      }
-    };
-
-    loadGenreBooks();
-    return () => {
-      isMounted = false;
-    };
-  }, [selectedGenre.id, books, refreshTick]);
+  // Genres now live on the Search tab (Spotify-style genre view).
 
   const handleRefresh = () => {
     setSurpriseBook(null);
@@ -185,32 +130,10 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   useEffect(() => {
     const extra: Audiobook[] = [];
     if (continueResult) extra.push(continueResult.book);
-    if (becauseYouListened) extra.push(...becauseYouListened.books);
+    if (readBooks) extra.push(...readBooks.books);
     if (extra.length > 0) checkStatusForBooks(extra);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [continueResult, becauseYouListened]);
-
-  const handleDownloadDirect = async (e: React.MouseEvent, book: Audiobook) => {
-    e.stopPropagation();
-    if (downloadProgressMap[book.id] !== undefined || downloadedStatusMap[book.id]) return;
-
-    setDownloadProgressMap((prev) => ({ ...prev, [book.id]: 5 }));
-    try {
-      const resolved = await resolveFullTracklist(book);
-      await downloadAudiobook(resolved, (percent) => {
-        setDownloadProgressMap((prev) => ({ ...prev, [book.id]: percent }));
-      });
-      setDownloadedStatusMap((prev) => ({ ...prev, [book.id]: true }));
-    } catch (err) {
-      console.warn('Direct download error:', err);
-    } finally {
-      setDownloadProgressMap((prev) => {
-        const next = { ...prev };
-        delete next[book.id];
-        return next;
-      });
-    }
-  };
+  }, [continueResult, readBooks]);
 
   const handleSurpriseMe = async () => {
     setIsRollingSurprise(true);
@@ -296,30 +219,6 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
         </div>
       </div>
 
-      {/* Interactive Genre Carousel Filter */}
-      <div id="explore-genre-carousel" className="mb-6 overflow-x-auto pb-2 scrollbar-none flex items-center gap-2">
-        {LIBRIVOX_GENRES.map((genre) => {
-          const isActive = selectedGenre.id === genre.id;
-          return (
-            <button
-              key={genre.id}
-              id={`genre-pill-${genre.id}`}
-              onClick={() => {
-                setSelectedGenre(genre);
-                setSurpriseBook(null);
-              }}
-              className={`px-4 py-1.5 rounded-full text-xs font-sans transition-all flex items-center shrink-0 ${
-                isActive
-                  ? 'bg-white text-black font-semibold'
-                  : 'bg-[var(--surface-raised)] text-[var(--text-main)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
-              }`}
-            >
-              {genre.label}
-            </button>
-          );
-        })}
-      </div>
-
       {/* Continue Listening */}
       {continueResult && (
         <div className="mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -362,7 +261,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 e.stopPropagation();
                 handleBookClick(continueResult.book);
               }}
-              className="w-12 h-12 rounded-full bg-[var(--accent)] text-black flex items-center justify-center shadow-lg shadow-black group-hover:scale-105 transition-transform shrink-0"
+              className="w-12 h-12 rounded-full bg-[var(--accent)] text-[var(--on-accent)] flex items-center justify-center shadow-lg shadow-black group-hover:scale-105 transition-transform shrink-0"
               title="Resume"
             >
               <Play className="w-5 h-5 fill-current ml-0.5" />
@@ -371,11 +270,11 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
         </div>
       )}
 
-      {/* Because You Listened (derived from history, catalog-matched) */}
-      {becauseYouListened && (
+      {/* Books You Read (actual titles from the reader's history) */}
+      {readBooks && (
         <div className="mb-10">
           <HorizontalBookShelf
-            section={becauseYouListened}
+            section={readBooks}
             onSelectBook={handleBookClick}
             onReadBook={onReadBook}
           />
@@ -419,7 +318,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                     e.stopPropagation();
                     handleBookClick(book);
                   }}
-                  className="w-8 h-8 rounded-full bg-[var(--accent)] text-black flex items-center justify-center shadow-md group-hover:scale-105 transition-transform shrink-0"
+                  className="w-8 h-8 rounded-full bg-[var(--accent)] text-[var(--on-accent)] flex items-center justify-center shadow-md group-hover:scale-105 transition-transform shrink-0"
                 >
                   <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
                 </button>
@@ -428,43 +327,6 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           </div>
         </div>
       )}
-
-      {/* Genre Section */}
-      <div id="genre-grid-section" className="mb-10">
-        <div className="flex items-center justify-between mb-4 px-1">
-          <div className="flex items-center gap-2">
-            <h3 className="text-base font-serif-display italic font-semibold text-[var(--text-main)] tracking-wide">
-              {selectedGenre.label}
-            </h3>
-            {isLoadingGenre && (
-              <div className="w-3.5 h-3.5 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
-            )}
-          </div>
-          <span className="text-xs text-[var(--text-dim)] font-mono">
-            {genreBooks.length} Works Available
-          </span>
-        </div>
-
-        {/* Book Grid */}
-        <div id="catalog-grid" className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
-          {genreBooks.map((book) => (
-            <BookGridCard
-              key={book.id}
-              book={book}
-              onSelect={handleBookClick}
-              onRead={onReadBook}
-            />
-          ))}
-        </div>
-        {!isLoadingGenre && genreBooks.length === 0 && (
-          <div className="flex flex-col items-center justify-center text-center py-12 px-6 rounded-2xl bg-[var(--surface)] border border-[var(--border-subtle)]">
-            <Sparkles className="w-7 h-7 text-[var(--accent)] mb-2" />
-            <p className="text-xs text-[var(--text-dim)]">
-              No works found for this shelf yet. Try another genre or refresh.
-            </p>
-          </div>
-        )}
-      </div>
 
       {/* Dynamic Recommendation Sections */}
       {isLoadingSections ? (
@@ -502,79 +364,13 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           </p>
           <button
             onClick={handleRefresh}
-            className="mt-4 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[var(--accent)] text-black text-xs font-semibold hover:opacity-90 transition-all active:scale-95"
+            className="mt-4 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[var(--accent)] text-[var(--on-accent)] text-xs font-semibold hover:opacity-90 transition-all active:scale-95"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
             Refresh Feed
           </button>
         </div>
       )}
-    </div>
-  );
-};
-
-// Sub-component: Clean Book Grid Card
-interface BookCardProps {
-  book: Audiobook;
-  onSelect: (book: Audiobook) => void;
-  onRead?: (book: Audiobook) => void;
-}
-
-const BookGridCard: React.FC<BookCardProps> = ({
-  book,
-  onSelect,
-  onRead,
-}) => {
-  return (
-    <div
-      id={`book-card-${book.id}`}
-      onClick={() => onSelect(book)}
-      className="group flex flex-col bg-[var(--surface)] rounded-2xl border border-[var(--border-subtle)] p-3 hover:border-[var(--accent)] hover:bg-[var(--surface-raised)] transition-all duration-200 cursor-pointer shadow-md hover:shadow-[0_8px_30px_rgba(0,0,0,0.7)]"
-    >
-      <div className="relative aspect-[3/4] w-full rounded-xl overflow-hidden mb-2.5 bg-[var(--surface)] border border-[var(--border-subtle)] shadow-inner">
-        <img
-          src={book.coverImageUrl}
-          alt={book.title}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-          referrerPolicy="no-referrer"
-          loading="lazy"
-        />
-
-        {/* Quick action buttons overlay */}
-        {onRead && (
-          <div className="absolute top-2 right-2 flex flex-col gap-1.5 z-10">
-            <button
-              id={`btn-card-read-${book.id}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                onRead(book);
-              }}
-              className="w-7 h-7 rounded-full bg-black/60 hover:bg-[var(--accent)] text-[var(--text-main)] hover:text-black border border-[var(--border-subtle)] flex items-center justify-center transition-all shadow-md"
-              title="Read Ebook Text Edition"
-            >
-              <BookOpen className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
-
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-          <div className="w-10 h-10 rounded-full bg-[var(--accent)] text-black flex items-center justify-center shadow-lg shadow-black transform scale-90 group-hover:scale-100 transition-transform">
-            <Play className="w-4 h-4 fill-current ml-0.5" />
-          </div>
-        </div>
-      </div>
-
-      <h4 className="text-xs sm:text-sm font-serif-display italic font-semibold text-[var(--text-main)] truncate leading-tight group-hover:text-[var(--accent)] transition-colors">
-        {book.title}
-      </h4>
-      <p className="text-[11px] text-[var(--text-dim)] font-serif-display italic truncate mt-0.5">
-        {book.author}
-      </p>
-
-      <div className="flex items-center justify-between text-[10px] text-[var(--text-dim)] mt-auto pt-2 border-t border-[var(--border-subtle)]">
-        <span className="truncate">{book.tracks.length} Ch.</span>
-        <span className="text-[var(--accent)] font-medium font-mono">{Math.round(book.totalTimeSecs / 3600) || 1}h</span>
-      </div>
     </div>
   );
 };
@@ -661,7 +457,7 @@ const HorizontalBookShelf: React.FC<HorizontalShelfProps> = ({
                 />
 
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <div className="w-9 h-9 rounded-full bg-[var(--accent)] text-black flex items-center justify-center shadow-lg shadow-black transform scale-90 group-hover:scale-100 transition-transform">
+                  <div className="w-9 h-9 rounded-full bg-[var(--accent)] text-[var(--on-accent)] flex items-center justify-center shadow-lg shadow-black transform scale-90 group-hover:scale-100 transition-transform">
                     <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
                   </div>
                 </div>

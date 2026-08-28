@@ -358,7 +358,7 @@ export const StatsView: React.FC<StatsViewProps> = ({
                 onClick={() => setSelectedDateFilter(isSelected ? null : d.dateStr)}
                 className={`p-2 rounded-xl border flex flex-col items-center justify-center transition-all cursor-pointer ${
                   isSelected
-                    ? 'bg-[var(--accent)] text-black border-[var(--accent)] font-bold shadow-md shadow-[rgba(var(--accent-rgb),0.3)]'
+                    ? 'bg-[var(--accent)] text-[var(--on-accent)] border-[var(--accent)] font-bold shadow-md shadow-[rgba(var(--accent-rgb),0.3)]'
                     : hasActivity
                     ? 'bg-[var(--accent-dim)] border-[var(--accent)] text-[var(--text-main)] hover:bg-[var(--accent-dim)]'
                     : 'bg-[var(--surface-raised)] border-[var(--border-subtle)] text-[var(--text-dim)] hover:bg-[var(--surface-raised)]'

@@ -81,7 +81,7 @@ export const BookmarksModal: React.FC<BookmarksModalProps> = ({
             <button
               id="btn-open-add-bookmark"
               onClick={() => setShowAddForm(true)}
-              className="w-full py-2.5 px-4 rounded-2xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black font-semibold text-xs flex items-center justify-center gap-2 shadow-lg shadow-[rgba(var(--accent-rgb),0.3)] transition-all active:scale-95"
+              className="w-full py-2.5 px-4 rounded-2xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--on-accent)] font-semibold text-xs flex items-center justify-center gap-2 shadow-lg shadow-[rgba(var(--accent-rgb),0.3)] transition-all active:scale-95"
             >
               <Plus className="w-4 h-4" />
               <span>Add Bookmark at {formatTime(currentTime)} ({currentTrack?.title || 'Current Track'})</span>
@@ -110,7 +110,7 @@ export const BookmarksModal: React.FC<BookmarksModalProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 rounded-xl bg-[var(--accent)] text-black font-semibold text-xs hover:bg-[var(--accent-hover)]"
+                  className="px-4 py-1.5 rounded-xl bg-[var(--accent)] text-[var(--on-accent)] font-semibold text-xs hover:bg-[var(--accent-hover)]"
                 >
                   Save Bookmark
                 </button>

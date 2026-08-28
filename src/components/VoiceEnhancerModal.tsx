@@ -129,7 +129,7 @@ export const VoiceEnhancerModal: React.FC<VoiceEnhancerModalProps> = ({
                     <span className="text-xs font-semibold truncate text-[var(--text-main)]">{preset.title}</span>
                     <span
                       className={`text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded ${
-                        isSelected ? 'bg-[var(--accent)] text-black' : 'bg-[var(--surface-raised)] text-[var(--text-dim)]'
+                        isSelected ? 'bg-[var(--accent)] text-[var(--on-accent)]' : 'bg-[var(--surface-raised)] text-[var(--text-dim)]'
                       }`}
                     >
                       {preset.tag}
@@ -139,7 +139,7 @@ export const VoiceEnhancerModal: React.FC<VoiceEnhancerModalProps> = ({
                 </div>
 
                 {isSelected && (
-                  <div className="p-1 rounded-full bg-[var(--accent)] text-black shrink-0 self-center">
+                  <div className="p-1 rounded-full bg-[var(--accent)] text-[var(--on-accent)] shrink-0 self-center">
                     <Check className="w-3.5 h-3.5" />
                   </div>
                 )}

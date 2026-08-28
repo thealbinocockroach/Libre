@@ -77,7 +77,7 @@ export const CodeExplorer: React.FC = () => {
           <button
             id="btn-export-apk-guide"
             onClick={() => setShowApkModal(true)}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black text-xs font-semibold shadow-[0_0_15px_rgba(var(--accent-rgb),0.3)] transition-all active:scale-95"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--on-accent)] text-xs font-semibold shadow-[0_0_15px_rgba(var(--accent-rgb),0.3)] transition-all active:scale-95"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Export & Build APK</span>
@@ -145,7 +145,7 @@ export const CodeExplorer: React.FC = () => {
 
             <button
               onClick={handleCopy}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black text-xs font-semibold shadow-[0_0_15px_rgba(var(--accent-rgb),0.3)] transition-all shrink-0 active:scale-95"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--on-accent)] text-xs font-semibold shadow-[0_0_15px_rgba(var(--accent-rgb),0.3)] transition-all shrink-0 active:scale-95"
             >
               {copied ? (
                 <>

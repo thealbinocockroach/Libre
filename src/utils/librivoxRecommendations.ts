@@ -131,7 +131,7 @@ export function mapArchiveDocToAudiobook(doc: any): Audiobook {
     ? doc.creator.join(', ')
     : doc.creator || 'Classic Author';
 
-  const totalSecs = typeof doc.runtime === 'string' ? parseRuntimeToSeconds(doc.runtime) : 10800;
+  const totalSecs = typeof doc.runtime === 'string' ? parseTimeString(doc.runtime) : 10800;
   const userPref = getSavedQualityPreference();
   const defaultUrl = `https://archive.org/download/${id}/${id}_${userPref === '128k' ? '128kb' : '64kb'}.mp3`;
 
@@ -277,18 +277,36 @@ export async function fetchLibriVoxCategory(query: string, rows: number = 8): Pr
     console.warn(`[LibriVox API] Category fetch fallback for "${query}":`, err);
   }
 
-  // Fallback to local catalog matches (search book metadata FOR the query terms)
-  const lower = query.toLowerCase();
-  const matched = INITIAL_AUDIOBOOKS.filter(
-    (b) =>
-      b.author.toLowerCase().includes(lower) ||
-      b.title.toLowerCase().includes(lower) ||
-      b.description.toLowerCase().includes(lower)
-  );
-  return matched.length > 0 ? matched : INITIAL_AUDIOBOOKS;
+  // No hardcoded fallback — return empty so the UI never shows canned books.
+  return [];
 }
 
-// Fetch dynamic recommendations tailored to the user's active history and library
+// Extract distinct authors actually read by the user (from history), most recent first.
+export function distinctReadAuthors(history: Audiobook[], limit = 4): { author: string; seed: Audiobook }[] {
+  const seen = new Set<string>();
+  const out: { author: string; seed: Audiobook }[] = [];
+  for (const book of history) {
+    const author = (book.author || '').split(',')[0].trim();
+    if (!author) continue;
+    const key = author.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ author, seed: book });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+// Fetch a shelf of more recordings by a given author from the live LibriVox catalog.
+export async function fetchMoreByAuthor(author: string, excludeId?: string, rows = 12): Promise<Audiobook[]> {
+  const query = `creator:(${encodeURIComponent(`"${author}"`)})`;
+  const fetched = await fetchLibriVoxCategory(query, rows);
+  const filtered = fetched.filter((b) => b.id !== excludeId);
+  return Array.from(new Map(filtered.map((b) => [b.title, b])).values());
+}
+
+// Fetch dynamic recommendations tailored to the reader's actual history (by author),
+// with no hardcoded/canned books — everything is pulled from the live LibriVox catalog.
 export async function fetchDynamicPersonalizedRecommendations(
   currentBook: Audiobook | null,
   history: Audiobook[],
@@ -298,96 +316,110 @@ export async function fetchDynamicPersonalizedRecommendations(
   const cached = cacheGet<RecommendationSection[]>(cacheKey);
   if (cached) return cached;
 
-  const seedBook = currentBook || history[0] || savedBooks[0] || INITIAL_AUDIOBOOKS[0];
+  const seedBook = currentBook || history[0] || savedBooks[0] || null;
 
-  // Build all 4 queries upfront
-  const seedAuthor = seedBook.author.split(',')[0].trim();
-  const authorQuery = `creator:("${encodeURIComponent(seedAuthor)}") OR title:("${encodeURIComponent(
-    seedBook.title.split(' ')[0]
-  )}")`;
+  // Authors actually read by the user (from listening history, then library).
+  const historyAuthors = distinctReadAuthors(history, 4);
+  const seedAuthorForSection = seedBook
+    ? seedBook.author.split(',')[0].trim()
+    : historyAuthors[0]?.author || '';
+
+  const seenBookIds = new Set<string>([...(currentBook ? [currentBook.id] : []), ...history.map((b) => b.id)]);
+
+  const sections: RecommendationSection[] = [];
+  const appendSection = (section: RecommendationSection) => {
+    const uniqueBooks = section.books.filter((b) => !seenBookIds.has(b.id));
+    if (uniqueBooks.length === 0) return;
+    uniqueBooks.forEach((b) => seenBookIds.add(b.id));
+    sections.push({ ...section, books: uniqueBooks });
+  };
+
   const trendingQuery = 'downloads:[10000 TO 9999999]';
   const shortQuery = 'runtime:[00:10:00 TO 03:00:00] AND (poe OR chekhov OR "short stories" OR wilde OR kafka) AND NOT (doyle OR tolstoy OR dumas OR hugo OR dickens OR austen)';
   const epicQuery = 'runtime:[10:00:00 TO 99:00:00] AND (doyle OR tolstoy OR dumas OR hugo OR dickens OR austen) AND NOT (poe OR chekhov OR wilde OR kafka)';
 
-  // Fire all 4 in parallel
-  const [relatedResult, trendingResult, shortResult, epicResult] = await Promise.allSettled([
-    fetchLibriVoxCategory(authorQuery, 6),
+  const authorFetches = historyAuthors.map((h) =>
+    fetchMoreByAuthor(h.author, h.seed.id, 12).then((books) => ({ h, books }))
+  );
+  const [trendingResult, shortResult, epicResult, ...authorResults] = await Promise.allSettled([
     fetchLibriVoxCategory(trendingQuery, 8),
     fetchLibriVoxCategory(shortQuery, 6),
     fetchLibriVoxCategory(epicQuery, 6),
+    ...authorFetches,
   ]);
 
-  const sections: RecommendationSection[] = [];
-
-  // 1. "Because You Listened"
-  if (relatedResult.status === 'fulfilled') {
-    const filtered = relatedResult.value.filter((b) => b.id !== seedBook.id);
-    if (filtered.length > 0) {
-      sections.push({
-        id: 'because-you-listened',
-        title: `Because you enjoyed ${seedBook.author}`,
-        subtitle: `More timeless recordings related to ${seedAuthor}`,
-        badge: 'Personalized',
-        books: Array.from(new Map(filtered.map(b => [b.title, b])).values()),
+  // 1. "More from {author}" for each distinct author actually read
+  authorResults.forEach((res, idx) => {
+    const { h, books } = (res.status === 'fulfilled' ? res.value : { h: historyAuthors[idx], books: [] });
+    if (res.status === 'fulfilled' && books.length > 0) {
+      appendSection({
+        id: `more-from-${idx}-${slug(h.author)}`,
+        title: `More from ${h.author}`,
+        subtitle: `Continue exploring ${h.author}'s other recordings`,
+        badge: 'From your reading',
+        books,
       });
     }
+  });
+
+  // 2. "Because you enjoyed {seed}" (from seed author/title via live catalog)
+  if (seedAuthorForSection) {
+    const authorQuery = `creator:("${encodeURIComponent(seedAuthorForSection)}") OR title:("${encodeURIComponent(
+      (seedBook ? seedBook.title : historyAuthors[0]?.seed.title || '').split(' ')[0]
+    )}")`;
+    const relatedResult = await fetchLibriVoxCategory(authorQuery, 8);
+    appendSection({
+      id: 'because-you-enjoyed',
+      title: `Because you enjoyed ${seedAuthorForSection}`,
+      subtitle: `More timeless recordings related to ${seedAuthorForSection}`,
+      badge: 'Personalized',
+      books: relatedResult,
+    });
   }
 
-  // 2. "Top Community Favorites"
+  // 3. "Top Community Favorites"
   if (trendingResult.status === 'fulfilled' && trendingResult.value.length > 0) {
-    sections.push({
+    appendSection({
       id: 'top-community-favorites',
       title: 'Most Listened on LibriVox',
       subtitle: 'Community masterpieces with the highest listener acclaim',
       badge: 'Trending',
-      books: Array.from(new Map(trendingResult.value.map(b => [b.title, b])).values()),
+      books: trendingResult.value,
     });
   }
 
-  // 3. "Short Listens"
+  // 4. "Bite-Sized Classics"
   if (shortResult.status === 'fulfilled' && shortResult.value.length > 0) {
-    sections.push({
+    appendSection({
       id: 'short-listens',
       title: 'Bite-Sized Classics',
       subtitle: 'Unabridged short stories & novellas under 3 hours',
       badge: 'Under 3h',
-      books: Array.from(new Map(shortResult.value.map(b => [b.title, b])).values()),
+      books: shortResult.value,
     });
   }
 
-  // 4. "Epic Masterpieces"
+  // 5. "Epic Literary Journeys"
   if (epicResult.status === 'fulfilled' && epicResult.value.length > 0) {
-    sections.push({
+    appendSection({
       id: 'epic-masterpieces',
       title: 'Epic Literary Journeys',
       subtitle: 'Immersive monumental novels with full cast or solo narration',
       badge: 'Epic Length',
-      books: Array.from(new Map(epicResult.value.map(b => [b.title, b])).values()),
+      books: epicResult.value,
     });
-  }
-
-  // Fallback guarantee
-  if (sections.length === 0) {
-    sections.push(
-      {
-        id: 'featured-classics',
-        title: 'Curated LibriVox Masterpieces',
-        subtitle: 'Hand-picked unabridged audio recordings',
-        badge: 'Essential',
-        books: INITIAL_AUDIOBOOKS,
-      },
-      {
-        id: 'mystery-vault',
-        title: 'Mystery & Victorian Detective Tales',
-        subtitle: 'Sherlock Holmes, Edgar Allan Poe, and enigmatic puzzles',
-        badge: 'Mystery',
-        books: INITIAL_AUDIOBOOKS.slice(0, 3),
-      }
-    );
   }
 
   cacheSet(cacheKey, sections, 3 * 60 * 1000);
   return sections;
+}
+
+function slug(text: string): string {
+  return (text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40) || 'author';
 }
 
 // Fetch full chapter tracklist for an Internet Archive item on demand

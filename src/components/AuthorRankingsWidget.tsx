@@ -117,7 +117,7 @@ export const AuthorRankingsWidget: React.FC<AuthorRankingsWidgetProps> = ({
             onClick={() => setFilterMode('all')}
             className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
               filterMode === 'all'
-                ? 'bg-[var(--accent)] text-black font-bold shadow-sm'
+                ? 'bg-[var(--accent)] text-[var(--on-accent)] font-bold shadow-sm'
                 : 'text-[var(--text-dim)] hover:text-[var(--text-main)]'
             }`}
           >
@@ -127,7 +127,7 @@ export const AuthorRankingsWidget: React.FC<AuthorRankingsWidgetProps> = ({
             onClick={() => setFilterMode('audio')}
             className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all flex items-center gap-1 ${
               filterMode === 'audio'
-                ? 'bg-[var(--accent)] text-black font-bold shadow-sm'
+                ? 'bg-[var(--accent)] text-[var(--on-accent)] font-bold shadow-sm'
                 : 'text-[var(--text-dim)] hover:text-[var(--text-main)]'
             }`}
           >

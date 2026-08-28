@@ -303,7 +303,7 @@ export const BookNotesModal: React.FC<BookNotesModalProps> = ({
             <button
               id="btn-add-new-note"
               onClick={handleOpenCreateForm}
-              className="px-4 py-2 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black font-semibold text-xs flex items-center gap-1.5 shadow-lg shadow-[rgba(var(--accent-rgb),0.3)] transition-all transform active:scale-95 cursor-pointer shrink-0"
+              className="px-4 py-2 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--on-accent)] font-semibold text-xs flex items-center gap-1.5 shadow-lg shadow-[rgba(var(--accent-rgb),0.3)] transition-all transform active:scale-95 cursor-pointer shrink-0"
             >
               <Plus className="w-4 h-4" />
               <span>Take Note</span>
@@ -318,7 +318,7 @@ export const BookNotesModal: React.FC<BookNotesModalProps> = ({
               onClick={() => setSelectedTagFilter(null)}
               className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-all shrink-0 ${
                 selectedTagFilter === null
-                  ? 'bg-[var(--accent)] text-black border-[var(--accent)]'
+                  ? 'bg-[var(--accent)] text-[var(--on-accent)] border-[var(--accent)]'
                   : 'bg-[var(--surface-raised)] border-[var(--border-subtle)] text-[var(--text-dim)] hover:text-[var(--text-main)]'
               }`}
             >
@@ -330,7 +330,7 @@ export const BookNotesModal: React.FC<BookNotesModalProps> = ({
                 onClick={() => setSelectedTagFilter(selectedTagFilter === tag ? null : tag)}
                 className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-all shrink-0 flex items-center gap-1 ${
                   selectedTagFilter === tag
-                    ? 'bg-[var(--accent)] text-black border-[var(--accent)]'
+                    ? 'bg-[var(--accent)] text-[var(--on-accent)] border-[var(--accent)]'
                     : 'bg-[var(--surface-raised)] border-[var(--border-subtle)] text-[var(--text-dim)] hover:text-[var(--text-main)]'
                 }`}
               >
@@ -454,7 +454,7 @@ export const BookNotesModal: React.FC<BookNotesModalProps> = ({
               <button
                 type="submit"
                 disabled={!formContent.trim()}
-                className="px-5 py-1.5 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40 text-black font-semibold text-xs transition-all shadow-md cursor-pointer"
+                className="px-5 py-1.5 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40 text-[var(--on-accent)] font-semibold text-xs transition-all shadow-md cursor-pointer"
               >
                 {editingNoteId ? 'Update Note' : 'Save Reflection'}
               </button>
@@ -478,7 +478,7 @@ export const BookNotesModal: React.FC<BookNotesModalProps> = ({
               {!isFormOpen && (
                 <button
                   onClick={handleOpenCreateForm}
-                  className="px-4 py-2 rounded-xl bg-[var(--accent)] text-black font-semibold text-xs inline-flex items-center gap-1.5 hover:bg-[var(--accent-hover)] transition-all shadow-lg"
+                  className="px-4 py-2 rounded-xl bg-[var(--accent)] text-[var(--on-accent)] font-semibold text-xs inline-flex items-center gap-1.5 hover:bg-[var(--accent-hover)] transition-all shadow-lg"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Write First Note</span>

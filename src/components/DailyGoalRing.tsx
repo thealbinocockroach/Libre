@@ -135,7 +135,7 @@ export const DailyGoalRing: React.FC = () => {
                 onClick={() => handleSelectPreset(preset)}
                 className={`py-2 px-1 rounded-xl text-xs font-mono font-bold transition-all border ${
                   progress.goalMinutes === preset
-                    ? 'bg-[var(--accent)] text-black border-[var(--accent)] shadow-md shadow-[rgba(var(--accent-rgb),0.3)]'
+                    ? 'bg-[var(--accent)] text-[var(--on-accent)] border-[var(--accent)] shadow-md shadow-[rgba(var(--accent-rgb),0.3)]'
                     : 'bg-[var(--surface-raised)] text-[var(--text-main)] hover:text-[var(--text-main)] border-[var(--border-subtle)] hover:border-[var(--border-subtle)]'
                 }`}
               >
@@ -159,7 +159,7 @@ export const DailyGoalRing: React.FC = () => {
             </div>
             <button
               type="submit"
-              className="px-4 py-1.5 rounded-xl bg-[var(--accent)] text-black font-semibold text-xs hover:bg-[var(--accent-hover)] transition-colors"
+              className="px-4 py-1.5 rounded-xl bg-[var(--accent)] text-[var(--on-accent)] font-semibold text-xs hover:bg-[var(--accent-hover)] transition-colors"
             >
               Apply
             </button>

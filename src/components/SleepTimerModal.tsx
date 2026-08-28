@@ -184,7 +184,7 @@ export const SleepTimerModal: React.FC<SleepTimerModalProps> = ({
               />
               <button
                 type="submit"
-                className="px-4 py-2 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black text-xs font-semibold transition-all"
+                className="px-4 py-2 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--on-accent)] text-xs font-semibold transition-all"
               >
                 Set
               </button>

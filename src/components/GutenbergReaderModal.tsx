@@ -434,12 +434,41 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
         const cached = await getCachedEbook(currentBook.id);
         if (cached && cached.chapters && cached.chapters.length > 0) {
           if (isMounted) {
-            setCurrentBook((prev) => ({ ...prev, ebookChapters: cached.chapters }));
+            // Re-parse raw text so fixes to paragraph/single-newline handling
+            // (and older corrupted caches with stray <br/>) are applied universally.
+            let chapters = cached.chapters;
+            if (
+              cached.format === 'txt' &&
+              cached.fullText &&
+              cached.fullText.trim().length > 500
+            ) {
+              try {
+                const reparsed = splitManuscriptIntoChapters(
+                  cached.fullText,
+                  currentBook.title
+                );
+                if (reparsed.length > 0 && reparsed.length === cached.chapters.length) {
+                  chapters = reparsed;
+                  cacheEbook(
+                    currentBook.id,
+                    cached.fullText,
+                    reparsed,
+                    'txt',
+                    cached.sourceUrl || '',
+                    currentBook.gutenbergId
+                  );
+                }
+              } catch (e) {
+                console.warn('Re-parse failed, falling back to cached chapters', e);
+              }
+            }
+
+            setCurrentBook((prev) => ({ ...prev, ebookChapters: chapters }));
             const targetIndex =
-              currentChapterIndex < cached.chapters.length
+              currentChapterIndex < chapters.length
                 ? currentChapterIndex
                 : 0;
-            const activeChapter = cached.chapters[targetIndex] || cached.chapters[0];
+            const activeChapter = chapters[targetIndex] || chapters[0];
             setHtmlContent(activeChapter.content);
             setIsStoredOffline(true);
             setIsLoading(false);
@@ -1169,6 +1198,75 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
   const currentTheme = themeStyles[settings.theme] || themeStyles.obsidian;
   const hasChapters = currentBook.ebookChapters && currentBook.ebookChapters.length > 1;
 
+  // Reader's own palette, fully independent of the app theme. These are scoped
+  // as CSS variables on the reader root so the app's theme change never
+  // disrupts the reading surface or its accent colors.
+  const READER_PALETTES: Record<
+    string,
+    {
+      bg: string; surface: string; surfaceRaised: string;
+      accent: string; accentHover: string; onAccent: string;
+      textMain: string; textDim: string; border: string;
+      success: string; warning: string; danger: string;
+      overlay: string; scrollbar: string;
+    }
+  > = {
+    obsidian: {
+      bg: '#050505', surface: '#0f0f0f', surfaceRaised: '#171717',
+      accent: '#C5A059', accentHover: '#d4af65', onAccent: '#0A0A0A',
+      textMain: '#ECECEC', textDim: '#8a8a8a', border: 'rgba(255, 255, 255, 0.08)',
+      success: '#4ADE80', warning: '#FBBF24', danger: '#F87171',
+      overlay: 'rgba(0, 0, 0, 0.55)', scrollbar: 'rgba(255, 255, 255, 0.18)',
+    },
+    sepia: {
+      bg: '#F5EFE1', surface: '#EFE7D5', surfaceRaised: '#E7DCC2',
+      accent: '#B45309', accentHover: '#92400e', onAccent: '#FFFFFF',
+      textMain: '#382E1E', textDim: '#7A6A50', border: 'rgba(120, 90, 40, 0.22)',
+      success: '#047857', warning: '#B45309', danger: '#B91C1C',
+      overlay: 'rgba(60, 45, 20, 0.45)', scrollbar: 'rgba(120, 90, 40, 0.25)',
+    },
+    paper: {
+      bg: '#FFFFFF', surface: '#F8FAFC', surfaceRaised: '#EEF2F7',
+      accent: '#0F172A', accentHover: '#334155', onAccent: '#FFFFFF',
+      textMain: '#1E293B', textDim: '#64748B', border: 'rgba(15, 23, 42, 0.12)',
+      success: '#047857', warning: '#B45309', danger: '#B91C1C',
+      overlay: 'rgba(15, 23, 42, 0.45)', scrollbar: 'rgba(15, 23, 42, 0.2)',
+    },
+    midnight: {
+      bg: '#090D16', surface: '#0F172A', surfaceRaised: '#1E293B',
+      accent: '#38BDF8', accentHover: '#0EA5E9', onAccent: '#062033',
+      textMain: '#E0E7FF', textDim: '#94A3B8', border: 'rgba(148, 163, 184, 0.25)',
+      success: '#4ADE80', warning: '#FBBF24', danger: '#F87171',
+      overlay: 'rgba(9, 13, 22, 0.55)', scrollbar: 'rgba(148, 163, 184, 0.2)',
+    },
+    oled: {
+      bg: '#000000', surface: '#050505', surfaceRaised: '#0b0b0b',
+      accent: '#E5A93C', accentHover: '#f5ba4f', onAccent: '#000000',
+      textMain: '#D1D5DB', textDim: '#6B7280', border: 'rgba(255, 255, 255, 0.08)',
+      success: '#34D399', warning: '#F59E0B', danger: '#FB7185',
+      overlay: 'rgba(0, 0, 0, 0.6)', scrollbar: 'rgba(255, 255, 255, 0.15)',
+    },
+  };
+
+  const readerPalette = READER_PALETTES[settings.theme] || READER_PALETTES.obsidian;
+  const readerVars = {
+    '--bg': readerPalette.bg,
+    '--surface': readerPalette.surface,
+    '--surface-raised': readerPalette.surfaceRaised,
+    '--accent': readerPalette.accent,
+    '--accent-hover': readerPalette.accentHover,
+    '--on-accent': readerPalette.onAccent,
+    '--text-main': readerPalette.textMain,
+    '--text-dim': readerPalette.textDim,
+    '--border-subtle': readerPalette.border,
+    '--success': readerPalette.success,
+    '--warning': readerPalette.warning,
+    '--danger': readerPalette.danger,
+    '--overlay': readerPalette.overlay,
+    '--scrollbar': readerPalette.scrollbar,
+  } as React.CSSProperties;
+
+
   // Font family classes
   const fontFamilies = {
     serif: 'font-serif',
@@ -1187,7 +1285,8 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
   return (
     <div
       id="ebook-reader-modal"
-      className={`fixed inset-0 z-50 flex flex-col animate-in fade-in duration-200 overflow-hidden select-text ${currentTheme.bg} ${currentTheme.text} ${fontFamilies[settings.fontFamily]}`}
+      className={`fixed inset-0 z-50 flex flex-col animate-in fade-in duration-200 overflow-hidden select-text pt-[max(env(safe-area-inset-top),0px)] ${currentTheme.bg} ${currentTheme.text} ${fontFamilies[settings.fontFamily]}`}
+      style={readerVars}
     >
       <input
         ref={fileInputRef}
@@ -1252,7 +1351,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
               onClick={() => setShowThreeDotMenu(!showThreeDotMenu)}
               className={`p-2 rounded-xl border transition-all ${
                 showThreeDotMenu
-                  ? 'bg-[var(--accent)] text-black border-[var(--accent)]'
+                  ? 'bg-[var(--accent)] text-[var(--on-accent)] border-[var(--accent)]'
                   : `border-transparent ${currentTheme.button}`
               }`}
               title="More Reader Features"
@@ -1380,7 +1479,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
                       // Trigger re-fetch by toggling a retry counter
                       setCurrentChapterIndex((prev) => prev);
                     }}
-                    className="px-5 py-2.5 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black font-semibold text-xs inline-flex items-center gap-2 transition-all shadow-lg cursor-pointer"
+                    className="px-5 py-2.5 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--on-accent)] font-semibold text-xs inline-flex items-center gap-2 transition-all shadow-lg cursor-pointer"
                   >
                     <RotateCcw className="w-4 h-4" />
                     <span>Retry Connection</span>
@@ -1451,7 +1550,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
                             targetScrollPercentageRef.current = 0;
                             contentContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
                           }}
-                          className="w-full sm:w-auto px-4 py-3 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black font-semibold text-xs flex items-center justify-between gap-2 transition-colors shadow-lg cursor-pointer ml-auto"
+                          className="w-full sm:w-auto px-4 py-3 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--on-accent)] font-semibold text-xs flex items-center justify-between gap-2 transition-colors shadow-lg cursor-pointer ml-auto"
                         >
                           <div className="text-right">
                             <span className="text-[10px] opacity-80 block uppercase">Next Chapter</span>
@@ -1538,7 +1637,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
                         }}
                         className={`w-full text-left px-3.5 py-2.5 rounded-xl text-xs flex items-center justify-between transition-colors ${
                           idx === currentChapterIndex
-                            ? 'bg-[var(--accent)] text-black font-semibold shadow-md'
+                            ? 'bg-[var(--accent)] text-[var(--on-accent)] font-semibold shadow-md'
                             : `${currentTheme.button} opacity-85`
                         }`}
                       >
@@ -1705,7 +1804,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
                                     className="w-full text-left p-2 rounded-lg bg-black/20 hover:bg-[var(--accent-dim)] border border-transparent hover:border-[var(--accent)] text-[11px] leading-relaxed transition-all block cursor-pointer"
                                   >
                                     <span className="opacity-70">{m.before}</span>
-                                    <mark className="bg-[var(--accent)] text-black font-semibold px-1 rounded-sm mx-0.5">
+                                    <mark className="bg-[var(--accent)] text-[var(--on-accent)] font-semibold px-1 rounded-sm mx-0.5">
                                       {m.match}
                                     </mark>
                                     <span className="opacity-70">{m.after}</span>
@@ -1745,7 +1844,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
                     <button
                       type="submit"
                       disabled={isDictLoading || !dictionaryWord.trim()}
-                      className="px-3 py-2 rounded-xl bg-[var(--accent)] text-black font-semibold text-xs disabled:opacity-50"
+                      className="px-3 py-2 rounded-xl bg-[var(--accent)] text-[var(--on-accent)] font-semibold text-xs disabled:opacity-50"
                     >
                       Define
                     </button>
@@ -1809,7 +1908,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
                 <div className="space-y-3">
                   <button
                     onClick={handleAddBookmark}
-                    className="w-full py-2.5 rounded-xl bg-[var(--accent)] text-black font-semibold text-xs flex items-center justify-center gap-2 hover:bg-[var(--accent-hover)] transition-colors"
+                    className="w-full py-2.5 rounded-xl bg-[var(--accent)] text-[var(--on-accent)] font-semibold text-xs flex items-center justify-center gap-2 hover:bg-[var(--accent-hover)] transition-colors"
                   >
                     <BookmarkIcon className="w-4 h-4" />
                     <span>Bookmark Current Position ({scrollProgress}%)</span>
@@ -2032,7 +2131,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
                 </button>
                 <button
                   onClick={handleSaveNote}
-                  className="px-4 py-2 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black font-semibold text-xs transition-colors"
+                  className="px-4 py-2 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-[var(--on-accent)] font-semibold text-xs transition-colors"
                 >
                   Save Note
                 </button>
@@ -2102,7 +2201,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
                     onClick={() => updateSettings({ fontFamily: f.id as any })}
                     className={`py-1.5 px-2 rounded-xl border text-xs text-center transition-all ${f.font} ${
                       settings.fontFamily === f.id
-                        ? 'bg-[var(--accent)] text-black font-semibold border-[var(--accent)]'
+                        ? 'bg-[var(--accent)] text-[var(--on-accent)] font-semibold border-[var(--accent)]'
                         : 'bg-[var(--surface-raised)] border-[var(--border-subtle)] opacity-80 hover:opacity-100'
                     }`}
                   >
@@ -2131,7 +2230,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
                   max="32"
                   value={settings.fontSize}
                   onChange={(e) => updateSettings({ fontSize: parseInt(e.target.value, 10) })}
-                  className="flex-1 accent-[#C5A059]"
+                  className="flex-1 accent-[var(--accent)]"
                 />
                 <button
                   onClick={() => updateSettings({ fontSize: Math.min(32, settings.fontSize + 1) })}
@@ -2157,7 +2256,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
                       onClick={() => updateSettings({ lineHeight: l.val })}
                       className={`flex-1 py-1 rounded-lg border text-[11px] font-mono transition-all ${
                         settings.lineHeight === l.val
-                          ? 'bg-[var(--accent)] text-black font-semibold border-[var(--accent)]'
+                          ? 'bg-[var(--accent)] text-[var(--on-accent)] font-semibold border-[var(--accent)]'
                           : 'bg-[var(--surface-raised)] border-[var(--border-subtle)] opacity-70'
                       }`}
                     >
@@ -2174,7 +2273,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
                     onClick={() => updateSettings({ textAlign: 'left' })}
                     className={`flex-1 py-1 rounded-lg border flex items-center justify-center transition-all ${
                       settings.textAlign === 'left'
-                        ? 'bg-[var(--accent)] text-black border-[var(--accent)]'
+                        ? 'bg-[var(--accent)] text-[var(--on-accent)] border-[var(--accent)]'
                         : 'bg-[var(--surface-raised)] border-[var(--border-subtle)] opacity-70'
                     }`}
                   >
@@ -2184,7 +2283,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
                     onClick={() => updateSettings({ textAlign: 'justify' })}
                     className={`flex-1 py-1 rounded-lg border flex items-center justify-center transition-all ${
                       settings.textAlign === 'justify'
-                        ? 'bg-[var(--accent)] text-black border-[var(--accent)]'
+                        ? 'bg-[var(--accent)] text-[var(--on-accent)] border-[var(--accent)]'
                         : 'bg-[var(--surface-raised)] border-[var(--border-subtle)] opacity-70'
                     }`}
                   >
@@ -2207,7 +2306,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
                     onClick={() => updateSettings({ swipeDirection: s.id as any })}
                     className={`py-1.5 px-2 rounded-xl border text-[11px] text-center transition-all ${
                       settings.swipeDirection === s.id
-                        ? 'bg-[var(--accent)] text-black font-semibold border-[var(--accent)]'
+                        ? 'bg-[var(--accent)] text-[var(--on-accent)] font-semibold border-[var(--accent)]'
                         : 'bg-[var(--surface-raised)] border-[var(--border-subtle)] opacity-70 hover:opacity-100'
                     }`}
                   >
@@ -2229,7 +2328,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
           onClick={() => setActiveSidebarTab(activeSidebarTab === 'chapters' ? null : 'chapters')}
           className={`p-2 rounded-xl border transition-all cursor-pointer ${
             activeSidebarTab === 'chapters'
-              ? 'bg-[var(--accent)] text-black border-[var(--accent)]'
+              ? 'bg-[var(--accent)] text-[var(--on-accent)] border-[var(--accent)]'
               : 'border-transparent hover:bg-[var(--surface-raised)] text-[var(--text-main)]'
           }`}
           title="Table of Contents"
@@ -2243,14 +2342,14 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
           onClick={() => setActiveSidebarTab(activeSidebarTab === 'highlights' ? null : 'highlights')}
           className={`p-2 rounded-xl border relative transition-all cursor-pointer ${
             activeSidebarTab === 'highlights'
-              ? 'bg-[var(--accent)] text-black border-[var(--accent)]'
+              ? 'bg-[var(--accent)] text-[var(--on-accent)] border-[var(--accent)]'
               : 'border-transparent hover:bg-[var(--surface-raised)] text-[var(--text-main)]'
           }`}
           title="Highlights & Notes"
         >
           <Highlighter className="w-4 h-4" />
           {annotations.length > 0 && (
-            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[var(--accent)] text-black font-bold text-[9px] flex items-center justify-center">
+            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[var(--accent)] text-[var(--on-accent)] font-bold text-[9px] flex items-center justify-center">
               {annotations.length > 99 ? '99+' : annotations.length}
             </span>
           )}
@@ -2262,7 +2361,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
           onClick={handleAddBookmark}
           className={`p-2 rounded-xl border transition-all cursor-pointer ${
             activeSidebarTab === 'bookmarks'
-              ? 'bg-[var(--accent)] text-black border-[var(--accent)]'
+              ? 'bg-[var(--accent)] text-[var(--on-accent)] border-[var(--accent)]'
               : 'border-transparent hover:bg-[var(--surface-raised)] text-[var(--text-main)]'
           }`}
           title="Bookmark Current Page"
@@ -2297,7 +2396,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
             </button>
             <button
               onClick={onTogglePlayPause}
-              className="p-2 rounded-full bg-[var(--accent)] text-black hover:bg-[var(--accent-hover)] transition-all shadow-md active:scale-95 cursor-pointer"
+              className="p-2 rounded-full bg-[var(--accent)] text-[var(--on-accent)] hover:bg-[var(--accent-hover)] transition-all shadow-md active:scale-95 cursor-pointer"
               title={playerState?.isPlaying ? 'Pause Audiobook' : 'Play Audiobook'}
             >
               {playerState?.isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
