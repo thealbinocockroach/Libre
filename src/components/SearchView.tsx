@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Audiobook, AudioTrack } from '../types';
 import { Search, X, Play, Clock, Sparkles, BookOpen, SearchX, Download, Check } from 'lucide-react';
-import { resolveFullTracklist } from '../utils/librivoxRecommendations';
+import { resolveFullTracklist, mapArchiveDocToAudiobook } from '../utils/librivoxRecommendations';
 import { downloadAudiobook, isBookDownloaded } from '../utils/offlineStorage';
 import { getSavedQualityPreference } from '../utils/audioQualityManager';
 import { httpGetJson } from '../utils/httpClient';
@@ -49,14 +49,14 @@ export const SearchView: React.FC<SearchViewProps> = ({
 
   // Check downloaded status
   const checkStatus = async (books: Audiobook[]) => {
-    const statusObj: Record<string, boolean> = {};
-    for (const b of books) {
-      statusObj[b.id] = await isBookDownloaded(b.id);
-    }
-    setDownloadedStatusMap((prev) => ({ ...prev, ...statusObj }));
+    const statusMap: Record<string, boolean> = {};
+    await Promise.all(books.map(async (b) => {
+      statusMap[b.id] = await isBookDownloaded(b.id);
+    }));
+    setDownloadedStatusMap((prev) => ({ ...prev, ...statusMap }));
   };
 
-  // Perform multi-source search (Local + LibriVox Feed + Internet Archive)
+  // Perform multi-source search (Local + LibriVox Feed + Internet Archive) with cancellation
   useEffect(() => {
     if (!debouncedTerm.trim()) {
       setResults([]);
@@ -72,127 +72,85 @@ export const SearchView: React.FC<SearchViewProps> = ({
         book.description.toLowerCase().includes(query)
     );
 
-    let isMounted = true;
+    const abortController = new AbortController();
 
     const fetchLibriVoxAndArchive = async () => {
       const combined: Audiobook[] = [...localMatches];
 
-      try {
-        // 1. Query Internet Archive LibriVox Collection
-        const archiveUrl = `https://archive.org/advancedsearch.php?q=collection:(librivoxaudio)+AND+(title:(${encodeURIComponent(
-          query
-        )})+OR+creator:(${encodeURIComponent(query)}))&fl[]=identifier,title,creator,description,year,runtime,downloads&sort[]=downloads+desc&output=json&rows=12`;
+      // Fire both API searches in parallel
+      const [archiveRes, lvRes] = await Promise.allSettled([
+        httpGetJson(
+          `https://archive.org/advancedsearch.php?q=collection:(librivoxaudio)+AND+(title:(${encodeURIComponent(
+            query
+          )})+OR+creator:(${encodeURIComponent(query)}))&fl[]=identifier,title,creator,description,year,runtime,downloads&sort[]=downloads+desc&output=json&rows=12`,
+          { timeout: 15000, retries: 2 }
+        ),
+        httpGetJson(
+          `https://librivox.org/api/feed/audiobooks?format=json&title=${encodeURIComponent(
+            query
+          )}&limit=8&extended=1`,
+          { timeout: 15000, retries: 2 }
+        ),
+      ]);
 
-        const archiveRes = await httpGetJson(archiveUrl, { timeout: 15000, retries: 2 });
-        if (archiveRes.ok && archiveRes.data) {
-          const archiveData = archiveRes.data;
-          if (archiveData.response?.docs && Array.isArray(archiveData.response.docs)) {
-            archiveData.response.docs.forEach((doc: any) => {
-              const id = doc.identifier;
-              if (
-                id &&
-                !combined.some(
-                  (b) => b.id === id || b.title.toLowerCase() === (doc.title || '').toLowerCase()
-                )
-              ) {
-                const rawDesc =
-                  typeof doc.description === 'string'
-                    ? doc.description.replace(/<[^>]*>/g, '').trim()
-                    : '';
-                const userPref = getSavedQualityPreference();
-                const defaultUrl = `https://archive.org/download/${id}/${id}_${userPref === '128k' ? '128kb' : '64kb'}.mp3`;
-                combined.push({
-                  id,
-                  title: doc.title || 'Untitled Work',
-                  author: Array.isArray(doc.creator)
-                    ? doc.creator.join(', ')
-                    : doc.creator || 'LibriVox Volunteer Narrators',
-                  description:
-                    rawDesc ||
-                    'Public domain classic recorded by LibriVox volunteers and hosted by the Internet Archive.',
-                  coverImageUrl: `https://archive.org/services/img/${id}`,
-                  language: 'English',
-                  totalTimeSecs: typeof doc.runtime === 'string' ? parseRuntimeToSecs(doc.runtime) : 7200,
-                  reader: 'LibriVox Community',
-                  availableQualities: ['128k', '64k'],
-                  selectedQuality: userPref,
-                  tracks: [
-                    {
-                      id: `ia_${id}_01`,
-                      title: `${doc.title || 'Section 1'}`,
-                      audioUrl: defaultUrl,
-                      durationSeconds: 1800,
-                      trackNumber: 1,
-                      quality: userPref,
-                      variants: {
-                        '64k': `https://archive.org/download/${id}/${id}_64kb.mp3`,
-                        '128k': `https://archive.org/download/${id}/${id}_128kb.mp3`,
-                      },
-                    },
-                  ],
-                });
-              }
-            });
-          }
+      // Process Archive results — reuse shared mapper
+      if (archiveRes.status === 'fulfilled' && archiveRes.value.ok && archiveRes.value.data) {
+        const docs = archiveRes.value.data.response?.docs;
+        if (Array.isArray(docs)) {
+          docs.forEach((doc: any) => {
+            const id = doc.identifier;
+            if (id && !combined.some((b) => b.id === id || b.title.toLowerCase() === (doc.title || '').toLowerCase())) {
+              combined.push(mapArchiveDocToAudiobook(doc));
+            }
+          });
         }
-      } catch (err) {
-        console.warn('Internet Archive search fallback:', err);
       }
 
-      try {
-        // 2. Query LibriVox JSON Feed directly
-        const librivoxUrl = `https://librivox.org/api/feed/audiobooks?format=json&title=^${encodeURIComponent(
-          query
-        )}&limit=8&extended=1`;
-
-        const lvRes = await httpGetJson(librivoxUrl, { timeout: 15000, retries: 2 });
-        if (lvRes.ok && lvRes.data) {
-          const lvData = lvRes.data;
-          if (lvData.books && Array.isArray(lvData.books)) {
-            lvData.books.forEach((b: any) => {
-              const id = String(b.id);
-              if (!combined.some((c) => c.id === id)) {
-                combined.push({
-                  id,
-                  title: b.title || 'Untitled',
-                  author: b.authors?.[0]
-                    ? `${b.authors[0].first_name || ''} ${b.authors[0].last_name || ''}`.trim()
-                    : 'Public Domain Author',
-                  description: (b.description || '').replace(/<[^>]*>/g, '').trim(),
-                  coverImageUrl:
-                    b.coverart_jpg ||
-                    `https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&q=80&w=800`,
-                  language: b.language || 'English',
-                  totalTimeSecs: parseInt(b.totaltimesecs, 10) || 3600,
-                  reader: b.sections?.[0]?.readers?.[0]?.display_name || 'LibriVox Reader',
-                  tracks:
-                    b.sections && Array.isArray(b.sections) && b.sections.length > 0
-                      ? b.sections.map((s: any, idx: number) => ({
-                          id: `sec_${b.id}_${s.id || idx}`,
-                          title: s.title || `Section ${idx + 1}`,
-                          audioUrl: s.listen_url || '',
-                          durationSeconds: parseInt(s.playtime, 10) || 1200,
-                          trackNumber: idx + 1,
-                        }))
-                      : [
-                          {
-                            id: `tr_${b.id}_1`,
-                            title: `${b.title} - Full Audiobook`,
-                            audioUrl: b.url_librivox || '',
-                            durationSeconds: 1800,
-                            trackNumber: 1,
-                          },
-                        ],
-                });
-              }
-            });
-          }
+      // Process LibriVox direct results
+      if (lvRes.status === 'fulfilled' && lvRes.value.ok && lvRes.value.data) {
+        const books = lvRes.value.data.books;
+        if (Array.isArray(books)) {
+          books.forEach((b: any) => {
+            const id = String(b.id);
+            if (!combined.some((c) => c.id === id)) {
+              combined.push({
+                id,
+                title: b.title || 'Untitled',
+                author: b.authors?.[0]
+                  ? `${b.authors[0].first_name || ''} ${b.authors[0].last_name || ''}`.trim()
+                  : 'Public Domain Author',
+                description: (b.description || '').replace(/<[^>]*>/g, '').trim(),
+                coverImageUrl:
+                  b.coverart_jpg ||
+                  `https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&q=80&w=800`,
+                language: b.language || 'English',
+                totalTimeSecs: parseInt(b.totaltimesecs, 10) || 3600,
+                reader: b.sections?.[0]?.readers?.[0]?.display_name || 'LibriVox Reader',
+                tracks:
+                  b.sections && Array.isArray(b.sections) && b.sections.length > 0
+                    ? b.sections.map((s: any, idx: number) => ({
+                        id: `sec_${b.id}_${s.id || idx}`,
+                        title: s.title || `Section ${idx + 1}`,
+                        audioUrl: s.listen_url || '',
+                        durationSeconds: parseInt(s.playtime, 10) || 1200,
+                        trackNumber: idx + 1,
+                      }))
+                    : [
+                        {
+                          id: `tr_${b.id}_1`,
+                          title: `${b.title} - Full Audiobook`,
+                          audioUrl: b.url_librivox || '',
+                          durationSeconds: 1800,
+                          trackNumber: 1,
+                        },
+                      ],
+              });
+            }
+          });
         }
-      } catch (err) {
-        console.warn('LibriVox direct feed fallback:', err);
       }
 
-      if (isMounted) {
+      if (!abortController.signal.aborted) {
         setResults(combined);
         setIsSearching(false);
         checkStatus(combined);
@@ -202,20 +160,9 @@ export const SearchView: React.FC<SearchViewProps> = ({
     fetchLibriVoxAndArchive();
 
     return () => {
-      isMounted = false;
+      abortController.abort();
     };
   }, [debouncedTerm, allBooks]);
-
-  const parseRuntimeToSecs = (runtime: string): number => {
-    try {
-      const parts = runtime.split(':').map((p) => parseInt(p, 10));
-      if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
-      if (parts.length === 2) return parts[0] * 60 + parts[1];
-    } catch {
-      // Fallback
-    }
-    return 7200;
-  };
 
   const handleDownloadDirect = async (e: React.MouseEvent, book: Audiobook) => {
     e.stopPropagation();

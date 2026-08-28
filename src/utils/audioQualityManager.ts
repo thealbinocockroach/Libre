@@ -1,4 +1,5 @@
 import { Audiobook, AudioTrack, AudioQualityPreference } from '../types';
+import { parseTimeString } from './timeParser';
 export type { AudioQualityPreference };
 
 export const STREAMING_QUALITY_KEY = 'libriaudio_streaming_quality';
@@ -226,7 +227,7 @@ export function segmentAndDeduplicateArchiveFiles(
     const quality = detectQualityFromMetadata(filename, file.format, file.bitrate);
     const sectionNum = extractSectionNumber(filename, file.title, file.track || idx + 1);
     const title = cleanTrackTitle(file.title, filename, sectionNum);
-    const duration = Math.round(parseFloat(file.length || '0') || 1200);
+    const duration = parseTimeString(file.length) || 1200;
     const url = `https://archive.org/download/${bookId}/${encodeURIComponent(filename).replace(/%2F/g, '/')}`;
 
     return {

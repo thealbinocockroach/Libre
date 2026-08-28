@@ -6,6 +6,34 @@ import {
   applyQualityToAudiobook,
 } from './audioQualityManager';
 import { httpGetJson } from './httpClient';
+import { parseTimeString } from './timeParser';
+
+// --- Simple in-memory cache (5 min TTL for search results) ---
+const _cache = new Map<string, { data: any; expiry: number }>();
+const CACHE_TTL = 5 * 60 * 1000;
+
+function cacheGet<T>(key: string): T | null {
+  const entry = _cache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiry) {
+    _cache.delete(key);
+    return null;
+  }
+  return entry.data as T;
+}
+
+function cacheSet(key: string, data: any, ttl = CACHE_TTL): void {
+  _cache.set(key, { data, expiry: Date.now() + ttl });
+  // Evict oldest if cache grows too large
+  if (_cache.size > 40) {
+    const oldest = _cache.keys().next().value;
+    if (oldest !== undefined) _cache.delete(oldest);
+  }
+}
+
+export function clearFetchCache(): void {
+  _cache.clear();
+}
 
 export interface RecommendationSection {
   id: string;
@@ -89,19 +117,8 @@ export const LIBRIVOX_GENRES: GenreCategory[] = [
   }
 ];
 
-// Helper to convert runtime string like "05:24:12" or "124:32" into total seconds
-export function parseRuntimeToSeconds(runtime?: string): number {
-  if (!runtime) return 7200;
-  const parts = runtime.split(':').map((p) => parseInt(p, 10));
-  if (parts.some(isNaN)) return 7200;
-  if (parts.length === 3) {
-    return parts[0] * 3600 + parts[1] * 60 + parts[2];
-  }
-  if (parts.length === 2) {
-    return parts[0] * 60 + parts[1];
-  }
-  return 7200;
-}
+// Re-export shared parser for callers that still import this
+export { parseTimeString as parseRuntimeToSeconds } from './timeParser';
 
 // Convert Internet Archive LibriVox doc to Audiobook
 export function mapArchiveDocToAudiobook(doc: any): Audiobook {
@@ -238,6 +255,10 @@ export function pickHistorySeed(history: Audiobook[], excludeId?: string): Audio
 
 // Fetch dynamic recommendations from Internet Archive LibriVox collection
 export async function fetchLibriVoxCategory(query: string, rows: number = 8): Promise<Audiobook[]> {
+  const cacheKey = `cat:${query}:${rows}`;
+  const cached = cacheGet<Audiobook[]>(cacheKey);
+  if (cached) return cached;
+
   try {
     const archiveUrl = `https://archive.org/advancedsearch.php?q=collection:(librivoxaudio)+AND+(${encodeURIComponent(
       query
@@ -248,19 +269,21 @@ export async function fetchLibriVoxCategory(query: string, rows: number = 8): Pr
 
     const docs = result.data.response?.docs;
     if (Array.isArray(docs) && docs.length > 0) {
-      return docs.map(mapArchiveDocToAudiobook);
+      const books = docs.map(mapArchiveDocToAudiobook);
+      cacheSet(cacheKey, books);
+      return books;
     }
   } catch (err) {
     console.warn(`[LibriVox API] Category fetch fallback for "${query}":`, err);
   }
 
-  // Fallback to local catalog matches
+  // Fallback to local catalog matches (search book metadata FOR the query terms)
   const lower = query.toLowerCase();
   const matched = INITIAL_AUDIOBOOKS.filter(
     (b) =>
-      lower.includes(b.author.toLowerCase()) ||
-      lower.includes(b.title.toLowerCase()) ||
-      b.description.toLowerCase().includes('classic')
+      b.author.toLowerCase().includes(lower) ||
+      b.title.toLowerCase().includes(lower) ||
+      b.description.toLowerCase().includes(lower)
   );
   return matched.length > 0 ? matched : INITIAL_AUDIOBOOKS;
 }
@@ -271,21 +294,34 @@ export async function fetchDynamicPersonalizedRecommendations(
   history: Audiobook[],
   savedBooks: Audiobook[]
 ): Promise<RecommendationSection[]> {
-  const sections: RecommendationSection[] = [];
+  const cacheKey = `recs:${currentBook?.id || 'none'}:${history.length}:${savedBooks.length}`;
+  const cached = cacheGet<RecommendationSection[]>(cacheKey);
+  if (cached) return cached;
 
-  // Seed reference book (either current book, last in history, or top saved)
   const seedBook = currentBook || history[0] || savedBooks[0] || INITIAL_AUDIOBOOKS[0];
 
-  // 1. "Because You Listened To..." section based on seed author / title
-  try {
-    const seedAuthor = seedBook.author.split(',')[0].trim();
-    const authorQuery = `creator:("${encodeURIComponent(seedAuthor)}") OR title:("${encodeURIComponent(
-      seedBook.title.split(' ')[0]
-    )}")`;
-    const relatedBooks = await fetchLibriVoxCategory(authorQuery, 6);
+  // Build all 4 queries upfront
+  const seedAuthor = seedBook.author.split(',')[0].trim();
+  const authorQuery = `creator:("${encodeURIComponent(seedAuthor)}") OR title:("${encodeURIComponent(
+    seedBook.title.split(' ')[0]
+  )}")`;
+  const trendingQuery = 'downloads:[10000 TO 9999999]';
+  const shortQuery = 'runtime:[00:10:00 TO 03:00:00] AND (poe OR chekhov OR "short stories" OR wilde OR kafka) AND NOT (doyle OR tolstoy OR dumas OR hugo OR dickens OR austen)';
+  const epicQuery = 'runtime:[10:00:00 TO 99:00:00] AND (doyle OR tolstoy OR dumas OR hugo OR dickens OR austen) AND NOT (poe OR chekhov OR wilde OR kafka)';
 
-    // Filter out seed book
-    const filtered = relatedBooks.filter((b) => b.id !== seedBook.id);
+  // Fire all 4 in parallel
+  const [relatedResult, trendingResult, shortResult, epicResult] = await Promise.allSettled([
+    fetchLibriVoxCategory(authorQuery, 6),
+    fetchLibriVoxCategory(trendingQuery, 8),
+    fetchLibriVoxCategory(shortQuery, 6),
+    fetchLibriVoxCategory(epicQuery, 6),
+  ]);
+
+  const sections: RecommendationSection[] = [];
+
+  // 1. "Because You Listened"
+  if (relatedResult.status === 'fulfilled') {
+    const filtered = relatedResult.value.filter((b) => b.id !== seedBook.id);
     if (filtered.length > 0) {
       sections.push({
         id: 'because-you-listened',
@@ -295,64 +331,42 @@ export async function fetchDynamicPersonalizedRecommendations(
         books: Array.from(new Map(filtered.map(b => [b.title, b])).values()),
       });
     }
-  } catch (e) {
-    console.warn('Personalized recommendation error:', e);
   }
 
-  // 2. "Top Community Favorites" (High downloads on LibriVox archive)
-  try {
-    const trendingQuery = 'downloads:[10000 TO 9999999]';
-    const trending = await fetchLibriVoxCategory(trendingQuery, 8);
-    if (trending.length > 0) {
-      sections.push({
-        id: 'top-community-favorites',
-        title: 'Most Listened on LibriVox',
-        subtitle: 'Community masterpieces with the highest listener acclaim',
-        badge: 'Trending',
-        books: Array.from(new Map(trending.map(b => [b.title, b])).values()),
-      });
-    }
-  } catch (e) {
-    console.warn('Trending LibriVox error:', e);
+  // 2. "Top Community Favorites"
+  if (trendingResult.status === 'fulfilled' && trendingResult.value.length > 0) {
+    sections.push({
+      id: 'top-community-favorites',
+      title: 'Most Listened on LibriVox',
+      subtitle: 'Community masterpieces with the highest listener acclaim',
+      badge: 'Trending',
+      books: Array.from(new Map(trendingResult.value.map(b => [b.title, b])).values()),
+    });
   }
 
-  // 3. "Short Listens" (< 3 Hours)
-  try {
-    // Exclude books commonly found in Epic collections
-    const shortQuery = 'runtime:[00:10:00 TO 03:00:00] AND (poe OR chekhov OR "short stories" OR wilde OR kafka) AND NOT (doyle OR tolstoy OR dumas OR hugo OR dickens OR austen)';
-    const shortListens = await fetchLibriVoxCategory(shortQuery, 6);
-    if (shortListens.length > 0) {
-      sections.push({
-        id: 'short-listens',
-        title: 'Bite-Sized Classics',
-        subtitle: 'Unabridged short stories & novellas under 3 hours',
-        badge: 'Under 3h',
-        books: Array.from(new Map(shortListens.map(b => [b.title, b])).values()),
-      });
-    }
-  } catch (e) {
-    console.warn('Short listens error:', e);
+  // 3. "Short Listens"
+  if (shortResult.status === 'fulfilled' && shortResult.value.length > 0) {
+    sections.push({
+      id: 'short-listens',
+      title: 'Bite-Sized Classics',
+      subtitle: 'Unabridged short stories & novellas under 3 hours',
+      badge: 'Under 3h',
+      books: Array.from(new Map(shortResult.value.map(b => [b.title, b])).values()),
+    });
   }
 
-  // 4. "Epic Masterpieces" (> 10 Hours)
-  try {
-    // Exclude books commonly found in Short collections
-    const epicQuery = 'runtime:[10:00:00 TO 99:00:00] AND (doyle OR tolstoy OR dumas OR hugo OR dickens OR austen) AND NOT (poe OR chekhov OR wilde OR kafka)';
-    const epics = await fetchLibriVoxCategory(epicQuery, 6);
-    if (epics.length > 0) {
-      sections.push({
-        id: 'epic-masterpieces',
-        title: 'Epic Literary Journeys',
-        subtitle: 'Immersive monumental novels with full cast or solo narration',
-        badge: 'Epic Length',
-        books: Array.from(new Map(epics.map(b => [b.title, b])).values()),
-      });
-    }
-  } catch (e) {
-    console.warn('Epic masterpieces error:', e);
+  // 4. "Epic Masterpieces"
+  if (epicResult.status === 'fulfilled' && epicResult.value.length > 0) {
+    sections.push({
+      id: 'epic-masterpieces',
+      title: 'Epic Literary Journeys',
+      subtitle: 'Immersive monumental novels with full cast or solo narration',
+      badge: 'Epic Length',
+      books: Array.from(new Map(epicResult.value.map(b => [b.title, b])).values()),
+    });
   }
 
-  // Fallback guarantee: Always have at least 2 rich sections
+  // Fallback guarantee
   if (sections.length === 0) {
     sections.push(
       {
@@ -372,6 +386,7 @@ export async function fetchDynamicPersonalizedRecommendations(
     );
   }
 
+  cacheSet(cacheKey, sections, 3 * 60 * 1000);
   return sections;
 }
 
@@ -382,8 +397,13 @@ export async function resolveFullTracklist(book: Audiobook): Promise<Audiobook> 
     return applyQualityToAudiobook(book);
   }
 
+  // Check cache
+  const cacheKey = `tracks:${book.id}`;
+  const cached = cacheGet<Audiobook>(cacheKey);
+  if (cached) return cached;
+
   try {
-    const result = await httpGetJson(`https://archive.org/metadata/${book.id}`, { timeout: 15000, retries: 1 });
+    const result = await httpGetJson(`https://archive.org/metadata/${book.id}`, { timeout: 15000, retries: 2 });
     if (!result.ok || !result.data) return applyQualityToAudiobook(book);
 
     const files: any[] = result.data.files || [];
@@ -398,7 +418,7 @@ export async function resolveFullTracklist(book: Audiobook): Promise<Audiobook> 
           0
         );
 
-        return {
+        const resolved: Audiobook = {
           ...book,
           availableQualities,
           qualitySegments,
@@ -406,6 +426,9 @@ export async function resolveFullTracklist(book: Audiobook): Promise<Audiobook> 
           tracks: deduplicatedTracks,
           totalTimeSecs: totalDuration > 0 ? totalDuration : book.totalTimeSecs,
         };
+
+        cacheSet(cacheKey, resolved, 10 * 60 * 1000);
+        return resolved;
       }
     }
   } catch (err) {
