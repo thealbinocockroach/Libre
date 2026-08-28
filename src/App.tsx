@@ -25,7 +25,7 @@ import {
   applyQualityToAudiobook,
   getSavedQualityPreference,
 } from './utils/audioQualityManager';
-import { saveAudiobookPosition, getAudiobookPosition } from './utils/audioPositionTracker';
+import { saveAudiobookPosition, getAudiobookPosition, flushAudioPosition, initPositionFlushHandlers } from './utils/audioPositionTracker';
 import { recordTrueListeningTime, recordReadingSession } from './utils/activityTracker';
 
 import {
@@ -133,6 +133,7 @@ export default function App() {
   // Initialize Theme on First User Interaction
   useEffect(() => {
     initTheme();
+    initPositionFlushHandlers();
   }, []);
 
   // Sync Audio Quality Preference Changes dynamically
@@ -409,7 +410,7 @@ export default function App() {
 
   const handleSkipNext = () => {
     if (!playerState.currentBook) return;
-    // Flush session for current track before switching
+    flushAudioPosition();
     flushAudioSession(playerState.currentBook, playerState.currentTrackIndex, playerState.currentTrack?.title, playerState.currentTime);
     const nextIdx = playerState.currentTrackIndex + 1;
     if (nextIdx < playerState.currentBook.tracks.length) {
@@ -421,7 +422,7 @@ export default function App() {
 
   const handleSkipPrevious = () => {
     if (!playerState.currentBook) return;
-    // Flush session for current track before switching
+    flushAudioPosition();
     flushAudioSession(playerState.currentBook, playerState.currentTrackIndex, playerState.currentTrack?.title, playerState.currentTime);
     if (playerState.currentTime > 5 || playerState.currentTrackIndex === 0) {
       handleSeek(0);
@@ -649,7 +650,7 @@ export default function App() {
           setTimeout(() => setPlaybackError(null), 5000);
         }}
         onPlay={() => setPlayerState((prev) => ({ ...prev, isPlaying: true }))}
-        onPause={() => setPlayerState((prev) => ({ ...prev, isPlaying: false }))}
+        onPause={() => { flushAudioPosition(); setPlayerState((prev) => ({ ...prev, isPlaying: false })); }}
         onSkipNext={handleSkipNext}
         onSkipPrevious={handleSkipPrevious}
       />
