@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import { PlayerState } from '../types';
 import { getOfflineAudioTrackUrl } from '../utils/offlineStorage';
-import MediaNotification, { MediaNotificationAction } from '../utils/mediaNotification';
+import AudioPlaybackNative, { AudioPlaybackEvent } from '../utils/audioPlaybackNative';
 
 interface AudioEngineProps {
   playerState: PlayerState;
@@ -22,10 +22,6 @@ function isValidAudioUrl(url: string | undefined | null): boolean {
   return trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('blob:');
 }
 
-/**
- * Attempt to fetch audio as a blob and return an object URL.
- * Used as fallback when direct <audio> playback fails (CORS, network issues).
- */
 async function fetchAudioAsBlobUrl(audioUrl: string, signal?: AbortSignal): Promise<string | null> {
   try {
     const res = await fetch(audioUrl, { mode: 'cors', signal });
@@ -37,6 +33,10 @@ async function fetchAudioAsBlobUrl(audioUrl: string, signal?: AbortSignal): Prom
     return null;
   }
 }
+
+const isNativePlatform = (): boolean =>
+  typeof (window as any).Capacitor?.isNativePlatform === 'function' &&
+  !!(window as any).Capacitor?.isNativePlatform?.();
 
 export const AudioEngine: React.FC<AudioEngineProps> = ({
   playerState,
@@ -62,12 +62,11 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
   const retryCountRef = useRef<number>(0);
   const trackRef = useRef(playerState.currentTrack);
   const bookRef = useRef(playerState.currentBook);
+  const nativeLoadedUrlRef = useRef<string | null>(null);
 
-  // Keep refs fresh for closure-safe callbacks
   trackRef.current = playerState.currentTrack;
   bookRef.current = playerState.currentBook;
 
-  // Refs for native media-notification action handlers (avoid stale closures)
   const onPlayRef = useRef(onPlay);
   const onPauseRef = useRef(onPause);
   const onSkipNextRef = useRef(onSkipNext);
@@ -77,10 +76,6 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
   onSkipNextRef.current = onSkipNext;
   onSkipPreviousRef.current = onSkipPrevious;
 
-  const isNativePlatform = (): boolean =>
-    typeof (window as any).Capacitor?.isNativePlatform === 'function' &&
-    !!(window as any).Capacitor?.isNativePlatform?.();
-
   const cleanupBlobUrl = useCallback(() => {
     if (blobUrlRef.current) {
       URL.revokeObjectURL(blobUrlRef.current);
@@ -88,7 +83,6 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
     }
   }, []);
 
-  // Initialize Web Audio graph lazily on first user interaction safely
   const initAudioGraph = useCallback(() => {
     if (audioCtxRef.current || !audioRef.current) return;
     try {
@@ -100,30 +94,23 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
       const source = ctx.createMediaElementSource(audioRef.current);
       const filter = ctx.createBiquadFilter();
       const gain = ctx.createGain();
-
       source.connect(filter);
       filter.connect(gain);
       gain.connect(ctx.destination);
-
       audioCtxRef.current = ctx;
       sourceNodeRef.current = source;
       biquadFilterRef.current = filter;
       gainNodeRef.current = gain;
-    } catch {
-      // If Web Audio routing is restricted (CORS or permissions), native audio element is used directly
-    }
+    } catch {}
   }, []);
 
-  // Sync audio source when track or book changes
+  // ====== NATIVE: ExoPlayer background service ======
   useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
+    if (!isNativePlatform()) return;
 
     const track = playerState.currentTrack;
     const book = playerState.currentBook;
     if (!track || !track.audioUrl) return;
-
-    // Validate URL before using
     if (!isValidAudioUrl(track.audioUrl)) {
       onError(`Invalid audio URL for "${track.title}". Skipping.`);
       return;
@@ -131,16 +118,161 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
 
     let isSubscribed = true;
 
-    // Cancel any in-flight blob fetch
-    if (abortRef.current) {
-      abortRef.current.abort();
+    async function loadNative() {
+      let finalUrl = track!.audioUrl;
+
+      if (book) {
+        try {
+          const offlineUrl = await getOfflineAudioTrackUrl(book.id, track!.id, track!.trackNumber);
+          if (offlineUrl && isSubscribed) {
+            finalUrl = offlineUrl;
+          }
+        } catch {}
+      }
+
+      if (!isSubscribed) return;
+      if (nativeLoadedUrlRef.current === finalUrl) return;
+
+      nativeLoadedUrlRef.current = finalUrl;
+      onBuffering(true);
+
+      try {
+        await AudioPlaybackNative.loadTrack({
+          url: finalUrl,
+          title: track!.title || '',
+          artist: book?.author || 'Unknown Author',
+          album: book?.title || '',
+          artworkUrl: book?.coverImageUrl || '',
+          seekTo: playerState.currentTime > 0 ? playerState.currentTime : 0,
+          autoPlay: playerState.isPlaying,
+        });
+      } catch {
+        onError(`Failed to load "${track!.title}".`);
+      }
     }
+
+    loadNative();
+    return () => { isSubscribed = false; };
+  }, [
+    playerState.currentTrack?.id,
+    playerState.currentBook?.id,
+    playerState.currentTrack?.audioUrl,
+    onError,
+  ]);
+
+  // Native: play/pause
+  useEffect(() => {
+    if (!isNativePlatform()) return;
+    if (playerState.isPlaying) {
+      AudioPlaybackNative.play().catch(() => {});
+    } else {
+      AudioPlaybackNative.pause().catch(() => {});
+    }
+  }, [playerState.isPlaying]);
+
+  // Native: seek
+  useEffect(() => {
+    if (!isNativePlatform()) return;
+    AudioPlaybackNative.seekTo({ position: playerState.currentTime }).catch(() => {});
+  }, [playerState.currentTime]);
+
+  // Native: playback rate
+  useEffect(() => {
+    if (!isNativePlatform()) return;
+    AudioPlaybackNative.setPlaybackRate({ rate: playerState.playbackSpeed }).catch(() => {});
+  }, [playerState.playbackSpeed]);
+
+  // Native: volume (with sleep-timer fade)
+  useEffect(() => {
+    if (!isNativePlatform()) return;
+    let targetVolume = playerState.isMuted ? 0 : playerState.volume;
+    if (playerState.sleepTimer.isActive && playerState.sleepTimer.remainingSeconds <= 20) {
+      const fadeFactor = Math.max(0, playerState.sleepTimer.remainingSeconds / 20);
+      targetVolume = targetVolume * fadeFactor;
+    }
+    AudioPlaybackNative.setVolume({ volume: Math.max(0, Math.min(1, targetVolume)) }).catch(() => {});
+  }, [
+    playerState.volume,
+    playerState.isMuted,
+    playerState.sleepTimer.isActive,
+    playerState.sleepTimer.remainingSeconds,
+  ]);
+
+  // Native: listen for events from ExoPlayer service
+  useEffect(() => {
+    if (!isNativePlatform()) return;
+    let handle: { remove: () => void } | undefined;
+
+    AudioPlaybackNative.addListener('audioPlaybackEvent', (e: AudioPlaybackEvent) => {
+      switch (e.action) {
+        case 'play':
+          onPlayRef.current();
+          break;
+        case 'pause':
+          onPauseRef.current();
+          break;
+        case 'next':
+          onSkipNextRef.current();
+          break;
+        case 'previous':
+          onSkipPreviousRef.current();
+          break;
+        case 'stop':
+          onPauseRef.current();
+          break;
+        case 'ended':
+          onEnded();
+          break;
+        case 'ready':
+          onBuffering(false);
+          break;
+        case 'buffering':
+          onBuffering(true);
+          break;
+        case 'stateChanged':
+          if (typeof e.position === 'number' && typeof e.duration === 'number') {
+            onTimeUpdate(e.position, e.duration);
+          }
+          break;
+        case 'error':
+          onError(e.message || 'Playback error');
+          break;
+      }
+    }).then((h) => { handle = h; }).catch(() => {});
+
+    return () => { handle?.remove(); };
+  }, []);
+
+  // Native: cleanup on unmount
+  useEffect(() => {
+    if (!isNativePlatform()) return;
+    return () => {
+      AudioPlaybackNative.stop().catch(() => {});
+    };
+  }, []);
+
+  // ====== WEB: HTML Audio fallback ======
+  useEffect(() => {
+    if (isNativePlatform()) return;
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const track = playerState.currentTrack;
+    const book = playerState.currentBook;
+    if (!track || !track.audioUrl) return;
+    if (!isValidAudioUrl(track.audioUrl)) {
+      onError(`Invalid audio URL for "${track.title}". Skipping.`);
+      return;
+    }
+
+    let isSubscribed = true;
+
+    if (abortRef.current) abortRef.current.abort();
     cleanupBlobUrl();
 
     async function loadAudioSource() {
       let finalUrl = track!.audioUrl;
 
-      // 1. Check if offline cached copy is available
       if (book) {
         try {
           const offlineUrl = await getOfflineAudioTrackUrl(book.id, track!.id, track!.trackNumber);
@@ -150,14 +282,11 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
           } else if (offlineUrl) {
             URL.revokeObjectURL(offlineUrl);
           }
-        } catch {
-          // offline check failed, continue with remote
-        }
+        } catch {}
       }
 
       if (!isSubscribed) return;
 
-      // Check if URL is different
       const currentSrc = audio!.currentSrc || audio!.src;
       const isSameSource = currentSrc && (currentSrc === finalUrl || currentSrc.endsWith(finalUrl));
 
@@ -165,24 +294,17 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
         onBuffering(true);
         targetSeekTimeRef.current = playerState.currentTime > 0 ? playerState.currentTime : 0;
         retryCountRef.current = 0;
-
         audio!.src = finalUrl;
         audio!.load();
-
         if (playerState.isPlaying) {
           initAudioGraph();
-          audio!.play().catch(() => {
-            // Autoplay permissions — user interaction needed
-          });
+          audio!.play().catch(() => {});
         }
       }
     }
 
     loadAudioSource();
-
-    return () => {
-      isSubscribed = false;
-    };
+    return () => { isSubscribed = false; };
   }, [
     playerState.currentTrack?.id,
     playerState.currentBook?.id,
@@ -192,11 +314,10 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
     onError,
   ]);
 
-  // Handle Play/Pause
   useEffect(() => {
+    if (isNativePlatform()) return;
     const audio = audioRef.current;
     if (!audio || !audio.src) return;
-
     if (playerState.isPlaying) {
       initAudioGraph();
       if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
@@ -208,11 +329,10 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
     }
   }, [playerState.isPlaying, initAudioGraph]);
 
-  // Sync Equalizer / Voice Enhancer filter preset
   useEffect(() => {
+    if (isNativePlatform()) return;
     const filter = biquadFilterRef.current;
     if (!filter) return;
-
     const preset = playerState.voiceEnhancer;
     switch (preset) {
       case 'voice_boost':
@@ -248,18 +368,15 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
     }
   }, [playerState.voiceEnhancer]);
 
-  // Handle Volume & Sleep Timer Fade-Out
   useEffect(() => {
+    if (isNativePlatform()) return;
     const audio = audioRef.current;
     if (!audio) return;
-
     let targetVolume = playerState.isMuted ? 0 : playerState.volume;
-
     if (playerState.sleepTimer.isActive && playerState.sleepTimer.remainingSeconds <= 20) {
       const fadeFactor = Math.max(0, playerState.sleepTimer.remainingSeconds / 20);
       targetVolume = targetVolume * fadeFactor;
     }
-
     if (gainNodeRef.current) {
       gainNodeRef.current.gain.value = targetVolume;
     } else {
@@ -272,18 +389,17 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
     playerState.sleepTimer.remainingSeconds,
   ]);
 
-  // Sync playback rate
   useEffect(() => {
+    if (isNativePlatform()) return;
     const audio = audioRef.current;
     if (!audio) return;
     audio.playbackRate = playerState.playbackSpeed;
   }, [playerState.playbackSpeed]);
 
-  // Sync seek when currentTime is manually changed from UI
   useEffect(() => {
+    if (isNativePlatform()) return;
     const audio = audioRef.current;
     if (!audio || !audio.src) return;
-
     if (audio.readyState >= 1) {
       if (Math.abs(audio.currentTime - playerState.currentTime) > 2) {
         audio.currentTime = playerState.currentTime;
@@ -293,27 +409,18 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
     }
   }, [playerState.currentTime]);
 
-  // Smart recovery when audio stalls or buffers excessively due to network
   const handleStalledOrWaiting = useCallback(() => {
+    if (isNativePlatform()) return;
     onBuffering(true);
-
-    if (stallTimerRef.current) {
-      clearTimeout(stallTimerRef.current);
-    }
-
-    // If buffering takes longer than 4 seconds, try blob fetch fallback (works in Capacitor)
+    if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
     stallTimerRef.current = setTimeout(async () => {
       const audio = audioRef.current;
       const track = trackRef.current;
       if (!audio || !track) return;
-
       if (!isValidAudioUrl(track.audioUrl)) return;
-
-      // Try fetching as blob URL (works in Capacitor WebView without CORS proxy)
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
-
       const blobUrl = await fetchAudioAsBlobUrl(track.audioUrl, controller.signal);
       if (blobUrl && audioRef.current) {
         targetSeekTimeRef.current = audio.currentTime || playerState.currentTime;
@@ -321,91 +428,68 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
         blobUrlRef.current = blobUrl;
         audio.src = blobUrl;
         audio.load();
-        if (playerState.isPlaying) {
-          audio.play().catch(() => {});
-        }
+        if (playerState.isPlaying) audio.play().catch(() => {});
       }
     }, 4000);
   }, [onBuffering, playerState.currentTime, playerState.isPlaying, cleanupBlobUrl]);
 
   const handleCanPlay = useCallback(() => {
+    if (isNativePlatform()) return;
     onBuffering(false);
     if (stallTimerRef.current) {
       clearTimeout(stallTimerRef.current);
       stallTimerRef.current = null;
     }
-
     const audio = audioRef.current;
     if (!audio) return;
-
-    // Apply pending seek position once stream is ready
     if (targetSeekTimeRef.current > 0) {
-      try {
-        audio.currentTime = targetSeekTimeRef.current;
-      } catch {
-        // ignore
-      }
+      try { audio.currentTime = targetSeekTimeRef.current; } catch {}
       targetSeekTimeRef.current = 0;
     }
   }, [onBuffering]);
 
   const handleAudioError = useCallback(async () => {
+    if (isNativePlatform()) return;
     onBuffering(false);
     const track = trackRef.current;
     const audio = audioRef.current;
-
-    // Retry up to 2 times with blob fetch fallback
     if (track && isValidAudioUrl(track.audioUrl) && retryCountRef.current < 2) {
       retryCountRef.current += 1;
       targetSeekTimeRef.current = audio?.currentTime || playerState.currentTime;
-
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
-
       const blobUrl = await fetchAudioAsBlobUrl(track.audioUrl, controller.signal);
       if (blobUrl && audioRef.current) {
         cleanupBlobUrl();
         blobUrlRef.current = blobUrl;
         audioRef.current.src = blobUrl;
         audioRef.current.load();
-        if (playerState.isPlaying) {
-          audioRef.current.play().catch(() => {});
-        }
+        if (playerState.isPlaying) audioRef.current.play().catch(() => {});
         return;
       }
     }
-
     const trackTitle = track?.title || 'Unknown';
     onError(`Playback failed for "${trackTitle}". Check your connection and try again.`);
   }, [onBuffering, onError, playerState.currentTime, playerState.isPlaying, cleanupBlobUrl]);
 
-  // --- Media Session API: system notifications & lock-screen controls ---
+  // Web Media Session API (skip on native — handled by native MediaSessionCompat)
   useEffect(() => {
+    if (isNativePlatform()) return;
     const book = playerState.currentBook;
     const track = playerState.currentTrack;
     if (!('mediaSession' in navigator) || !book) return;
-
     const ms = navigator.mediaSession;
-
-    // Set metadata (shows in Android notification & lock screen)
     const artworkSrc = book.coverImageUrl || '';
     const artwork: MediaImage[] = artworkSrc
-      ? [
-          { src: artworkSrc, sizes: '512x512', type: 'image/jpeg' },
-          { src: artworkSrc, sizes: '256x256', type: 'image/jpeg' },
-          { src: artworkSrc, sizes: '128x128', type: 'image/jpeg' },
-        ]
+      ? [{ src: artworkSrc, sizes: '512x512', type: 'image/jpeg' }]
       : [];
-
     ms.metadata = new MediaMetadata({
       title: track?.title || book.title,
       artist: book.author || 'Unknown Author',
       album: book.title,
       artwork,
     });
-
-    // Register playback action handlers (lock-screen / notification buttons)
     ms.setActionHandler('play', () => onPlay());
     ms.setActionHandler('pause', () => onPause());
     ms.setActionHandler('nexttrack', () => onSkipNext());
@@ -413,26 +497,18 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
     ms.setActionHandler('seekbackward', (details) => {
       const offset = details.seekOffset || 15;
       const audio = audioRef.current;
-      if (audio) {
-        audio.currentTime = Math.max(0, audio.currentTime - offset);
-      }
+      if (audio) audio.currentTime = Math.max(0, audio.currentTime - offset);
     });
     ms.setActionHandler('seekforward', (details) => {
       const offset = details.seekOffset || 30;
       const audio = audioRef.current;
-      if (audio) {
-        audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + offset);
-      }
+      if (audio) audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + offset);
     });
     ms.setActionHandler('seekto', (details) => {
       const audio = audioRef.current;
-      if (audio && details.fastSeek && 'fastSeek' in audio) {
-        audio.fastSeek(details.seekTime ?? 0);
-      } else if (audio && details.seekTime != null) {
-        audio.currentTime = details.seekTime;
-      }
+      if (audio && details.fastSeek && 'fastSeek' in audio) audio.fastSeek(details.seekTime ?? 0);
+      else if (audio && details.seekTime != null) audio.currentTime = details.seekTime;
     });
-
     return () => {
       ms.metadata = null;
       for (const action of ['play', 'pause', 'nexttrack', 'previoustrack', 'seekbackward', 'seekforward', 'seekto'] as const) {
@@ -441,19 +517,17 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
     };
   }, [playerState.currentBook?.id, playerState.currentTrack?.id, onPlay, onPause, onSkipNext, onSkipPrevious]);
 
-  // Sync Media Session playback state (playing/paused + position)
   useEffect(() => {
+    if (isNativePlatform()) return;
     if (!('mediaSession' in navigator)) return;
-    const ms = navigator.mediaSession;
-    ms.playbackState = playerState.isPlaying ? 'playing' : 'paused';
+    navigator.mediaSession.playbackState = playerState.isPlaying ? 'playing' : 'paused';
   }, [playerState.isPlaying]);
 
-  // Periodically update Media Session position so lock-screen scrubber stays current
   useEffect(() => {
+    if (isNativePlatform()) return;
     if (!('mediaSession' in navigator)) return;
     const audio = audioRef.current;
     if (!audio) return;
-
     const updatePosition = () => {
       if (navigator.mediaSession.setPositionState) {
         try {
@@ -467,104 +541,23 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
         } catch {}
       }
     };
-
-    // Update immediately, then every 3 seconds while playing
     updatePosition();
     if (!playerState.isPlaying) return;
     const interval = setInterval(updatePosition, 3000);
     return () => clearInterval(interval);
   }, [playerState.isPlaying, playerState.currentTime, playerState.duration, playerState.playbackSpeed]);
 
-  // --- Native Android media notification (persistent lock-screen + shade) ---
-  // Listen for transport actions from the native MediaNotification plugin and
-  // route them to the same handlers used by the web Media Session API.
+  // Cleanup on unmount (web only)
   useEffect(() => {
-    if (!isNativePlatform()) return;
-    let remove: (() => void) | undefined;
-
-    MediaNotification.addListener('mediaNotificationAction', (e: MediaNotificationAction) => {
-      const action = e?.action;
-      if (action === 'play') onPlayRef.current();
-      else if (action === 'pause') onPauseRef.current();
-      else if (action === 'next') onSkipNextRef.current();
-      else if (action === 'previous') onSkipPreviousRef.current();
-      else if (action === 'seek' && typeof e.position === 'number') {
-        const audio = audioRef.current;
-        if (audio) audio.currentTime = e.position / 1000;
-      }
-    }).then((handle: { remove: () => void }) => {
-      remove = () => handle.remove();
-    }).catch(() => {});
-
-    return () => {
-      remove?.();
-    };
-  }, []);
-
-  // Push current track metadata + playback state to the native notification
-  // whenever the book, track, or play/pause state changes.
-  useEffect(() => {
-    if (!isNativePlatform()) return;
-    const book = playerState.currentBook;
-    const track = playerState.currentTrack;
-    if (!book) return;
-
-    const push = () => {
-      MediaNotification.update({
-        title: track?.title || book.title,
-        artist: book.author || 'Unknown Author',
-        album: book.title,
-        artworkUrl: book.coverImageUrl || '',
-        isPlaying: playerState.isPlaying,
-        position: audioRef.current?.currentTime || playerState.currentTime || 0,
-        duration: audioRef.current?.duration || playerState.duration || 0,
-      });
-    };
-
-    if (playerState.isPlaying) {
-      MediaNotification.show()
-        .then(push)
-        .catch(() => push());
-    } else {
-      push();
-    }
-  }, [
-    playerState.currentBook?.id,
-    playerState.currentTrack?.id,
-    playerState.isPlaying,
-  ]);
-
-  // Keep the native notification's progress position fresh while playing.
-  useEffect(() => {
-    if (!isNativePlatform() || !playerState.isPlaying) return;
-    const id = setInterval(() => {
-      const book = bookRef.current;
-      const track = trackRef.current;
-      if (!book) return;
-      MediaNotification.update({
-        title: track?.title || book.title,
-        artist: book.author || 'Unknown Author',
-        album: book.title,
-        artworkUrl: book.coverImageUrl || '',
-        isPlaying: true,
-        position: audioRef.current?.currentTime || 0,
-        duration: audioRef.current?.duration || 0,
-      });
-    }, 5000);
-    return () => clearInterval(id);
-  }, [playerState.isPlaying]);
-
-  // Cleanup on unmount
-  useEffect(() => {
+    if (isNativePlatform()) return;
     return () => {
       abortRef.current?.abort();
       cleanupBlobUrl();
       if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
-      if (isNativePlatform()) {
-        MediaNotification.hide().catch(() => {});
-      }
     };
   }, [cleanupBlobUrl]);
+
+  if (isNativePlatform()) return null;
 
   return (
     <audio
