@@ -1,4 +1,5 @@
 import { EbookChapter } from '../types';
+import { httpGetText, httpGetJson } from '../utils/httpClient';
 
 /* =========================================================================
    GUTENDEX API LOOKUP + GUTENBERG FETCH + CORS BYPASS + CONTENT SANITIZATION
@@ -59,71 +60,25 @@ export function findClassicEbook(book: { id?: string; title?: string; gutenbergI
 }
 
 /* --------------------------------------------------------------------------
-   CORS BYPASS: Capacitor native HTTP + standard fetch fallback
+   HTTP: Timeout + retry + formatted errors via httpClient.ts
    -------------------------------------------------------------------------- */
 
-function isCapacitor(): boolean {
-  return typeof window !== 'undefined' && !!(window as any).Capacitor?.isNativePlatform?.();
-}
-
-/**
- * Project Gutenberg (and most mirror hosts) reject requests that omit a
- * User-Agent header, returning HTTP 403. We always send an identifying UA.
- */
-const UA_HEADER: Record<string, string> = {
-  'User-Agent': 'LibriAudio/1.0 (Android; +https://libriaudio.app)',
-  Accept: 'text/plain, text/html, application/xhtml+xml, */*',
-};
-
 async function nativeFetch(url: string): Promise<{ ok: boolean; text: string; status: number }> {
-  if (isCapacitor()) {
-    try {
-      const { Http } = await import('@capacitor-community/http');
-      const response = await Http.request({
-        method: 'GET',
-        url,
-        headers: UA_HEADER,
-      });
-      const body = typeof response.data === 'string'
-        ? response.data
-        : JSON.stringify(response.data);
-      return { ok: response.status >= 200 && response.status < 400, text: body, status: response.status };
-    } catch (err) {
-      console.warn('[nativeFetch] Capacitor HTTP failed, falling back to fetch:', err);
-    }
-  }
-
-  try {
-    const res = await fetch(url, { headers: UA_HEADER });
-    if (!res.ok) return { ok: false, text: '', status: res.status };
-    return { ok: true, text: await res.text(), status: res.status };
-  } catch (err) {
-    return { ok: false, text: '', status: 0 };
-  }
+  const result = await httpGetText(url, {
+    timeout: 15000,
+    retries: 2,
+    headers: { Accept: 'text/plain, text/html, application/xhtml+xml, */*' },
+  });
+  return { ok: result.ok, text: result.data || '', status: result.status };
 }
 
 async function nativeFetchJson(url: string): Promise<{ ok: boolean; data: any; status: number }> {
-  if (isCapacitor()) {
-    try {
-      const { Http } = await import('@capacitor-community/http');
-      const response = await Http.request({
-        method: 'GET',
-        url,
-        headers: { ...UA_HEADER, Accept: 'application/json, */*' },
-      });
-      return { ok: response.status >= 200 && response.status < 400, data: response.data, status: response.status };
-    } catch (err) {
-      console.warn('[nativeFetchJson] Capacitor HTTP failed, falling back to fetch:', err);
-    }
-  }
-
-  try {
-    const res = await fetch(url, { headers: { ...UA_HEADER, Accept: 'application/json, */*' } });
-    if (!res.ok) return { ok: false, data: null, status: res.status };
-    return { ok: true, data: await res.json(), status: res.status };
-  } catch (err) {
-    return { ok: false, data: null, status: 0 };
-  }
+  const result = await httpGetJson(url, {
+    timeout: 15000,
+    retries: 2,
+    headers: { Accept: 'application/json, */*' },
+  });
+  return { ok: result.ok, data: result.data, status: result.status };
 }
 
 /* --------------------------------------------------------------------------

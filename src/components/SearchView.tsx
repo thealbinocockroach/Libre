@@ -4,6 +4,7 @@ import { Search, X, Play, Clock, Sparkles, BookOpen, SearchX, Download, Check } 
 import { resolveFullTracklist } from '../utils/librivoxRecommendations';
 import { downloadAudiobook, isBookDownloaded } from '../utils/offlineStorage';
 import { getSavedQualityPreference } from '../utils/audioQualityManager';
+import { httpGetJson } from '../utils/httpClient';
 
 interface SearchViewProps {
   allBooks: Audiobook[];
@@ -82,9 +83,9 @@ export const SearchView: React.FC<SearchViewProps> = ({
           query
         )})+OR+creator:(${encodeURIComponent(query)}))&fl[]=identifier,title,creator,description,year,runtime,downloads&sort[]=downloads+desc&output=json&rows=12`;
 
-        const archiveRes = await fetch(archiveUrl);
-        if (archiveRes.ok) {
-          const archiveData = await archiveRes.json();
+        const archiveRes = await httpGetJson(archiveUrl, { timeout: 15000, retries: 2 });
+        if (archiveRes.ok && archiveRes.data) {
+          const archiveData = archiveRes.data;
           if (archiveData.response?.docs && Array.isArray(archiveData.response.docs)) {
             archiveData.response.docs.forEach((doc: any) => {
               const id = doc.identifier;
@@ -144,9 +145,9 @@ export const SearchView: React.FC<SearchViewProps> = ({
           query
         )}&limit=8&extended=1`;
 
-        const lvRes = await fetch(librivoxUrl);
-        if (lvRes.ok) {
-          const lvData = await lvRes.json();
+        const lvRes = await httpGetJson(librivoxUrl, { timeout: 15000, retries: 2 });
+        if (lvRes.ok && lvRes.data) {
+          const lvData = lvRes.data;
           if (lvData.books && Array.isArray(lvData.books)) {
             lvData.books.forEach((b: any) => {
               const id = String(b.id);

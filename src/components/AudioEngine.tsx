@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useCallback } from 'react';
 import { PlayerState } from '../types';
 import { getOfflineAudioTrackUrl } from '../utils/offlineStorage';
 import AudioPlaybackNative, { AudioPlaybackEvent } from '../utils/audioPlaybackNative';
+import { httpGetBlob } from '../utils/httpClient';
 
 interface AudioEngineProps {
   playerState: PlayerState;
@@ -22,13 +23,11 @@ function isValidAudioUrl(url: string | undefined | null): boolean {
   return trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('blob:');
 }
 
-async function fetchAudioAsBlobUrl(audioUrl: string, signal?: AbortSignal): Promise<string | null> {
+async function fetchAudioAsBlobUrl(audioUrl: string): Promise<string | null> {
   try {
-    const res = await fetch(audioUrl, { mode: 'cors', signal });
-    if (!res.ok) return null;
-    const blob = await res.blob();
-    if (!blob || blob.size < 512) return null;
-    return URL.createObjectURL(blob);
+    const result = await httpGetBlob(audioUrl, { timeout: 30000, retries: 1 });
+    if (!result.ok || !result.data || result.data.size < 512) return null;
+    return URL.createObjectURL(result.data);
   } catch {
     return null;
   }
@@ -419,9 +418,7 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
       if (!audio || !track) return;
       if (!isValidAudioUrl(track.audioUrl)) return;
       abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      const blobUrl = await fetchAudioAsBlobUrl(track.audioUrl, controller.signal);
+      const blobUrl = await fetchAudioAsBlobUrl(track.audioUrl);
       if (blobUrl && audioRef.current) {
         targetSeekTimeRef.current = audio.currentTime || playerState.currentTime;
         cleanupBlobUrl();
@@ -457,9 +454,7 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
       retryCountRef.current += 1;
       targetSeekTimeRef.current = audio?.currentTime || playerState.currentTime;
       abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      const blobUrl = await fetchAudioAsBlobUrl(track.audioUrl, controller.signal);
+      const blobUrl = await fetchAudioAsBlobUrl(track.audioUrl);
       if (blobUrl && audioRef.current) {
         cleanupBlobUrl();
         blobUrlRef.current = blobUrl;

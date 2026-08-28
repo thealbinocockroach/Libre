@@ -1,5 +1,6 @@
 import { Audiobook, AudioTrack, OfflineBookData, OfflineEbookData, EbookChapter } from '../types';
 import { resolveFullTracklist } from './librivoxRecommendations';
+import { httpGetBlob } from './httpClient';
 
 const DB_NAME = 'LibriAudio_Offline_DB';
 const DB_VERSION = 2; // Incremented for offline_ebooks store
@@ -392,52 +393,14 @@ export async function getOfflineAudioTrackUrl(
 }
 
 /**
- * Helper to fetch audio blob with retry logic and CORS fallback
+ * Fetch audio blob using the centralized HTTP client with timeout + retry
  */
-async function fetchAudioBlob(audioUrl: string, maxRetries = 2): Promise<Blob> {
-  let lastError: Error | null = null;
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    let response: Response | null = null;
-
-    // 1. Try CORS fetch
-    try {
-      response = await fetch(audioUrl, {
-        mode: 'cors',
-        signal: AbortSignal.timeout(30000),
-      });
-    } catch (err) {
-      response = null;
-      lastError = err instanceof Error ? err : new Error(String(err));
-    }
-
-    // 2. If CORS fails, try no-cors (limited but may work for some endpoints)
-    if (!response || !response.ok) {
-      try {
-        response = await fetch(audioUrl, {
-          signal: AbortSignal.timeout(30000),
-        });
-      } catch (err) {
-        response = null;
-        lastError = err instanceof Error ? err : new Error(String(err));
-      }
-    }
-
-    if (response && response.ok) {
-      const blob = await response.blob();
-      if (blob && blob.size >= 512) {
-        return blob;
-      }
-      lastError = new Error('Downloaded audio stream was empty or truncated');
-    }
-
-    // Wait before retry (exponential backoff)
-    if (attempt < maxRetries) {
-      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
-    }
+async function fetchAudioBlob(audioUrl: string): Promise<Blob> {
+  const result = await httpGetBlob(audioUrl, { timeout: 30000, retries: 2 });
+  if (!result.ok || !result.data || result.data.size < 512) {
+    throw new Error(`Failed to download audio track from ${audioUrl}`);
   }
-
-  throw lastError || new Error(`Failed to download audio track from ${audioUrl}`);
+  return result.data;
 }
 
 /**

@@ -5,6 +5,7 @@ import {
   getSavedQualityPreference,
   applyQualityToAudiobook,
 } from './audioQualityManager';
+import { httpGetJson } from './httpClient';
 
 export interface RecommendationSection {
   id: string;
@@ -242,11 +243,10 @@ export async function fetchLibriVoxCategory(query: string, rows: number = 8): Pr
       query
     )})&fl[]=identifier,title,creator,description,year,runtime,downloads,publicdate&sort[]=downloads+desc&output=json&rows=${rows}`;
 
-    const res = await fetch(archiveUrl);
-    if (!res.ok) throw new Error(`Archive API responded with ${res.status}`);
+    const result = await httpGetJson(archiveUrl, { timeout: 15000, retries: 2 });
+    if (!result.ok || !result.data) throw new Error(`Archive API failed`);
 
-    const data = await res.json();
-    const docs = data.response?.docs;
+    const docs = result.data.response?.docs;
     if (Array.isArray(docs) && docs.length > 0) {
       return docs.map(mapArchiveDocToAudiobook);
     }
@@ -383,11 +383,10 @@ export async function resolveFullTracklist(book: Audiobook): Promise<Audiobook> 
   }
 
   try {
-    const res = await fetch(`https://archive.org/metadata/${book.id}`);
-    if (!res.ok) return applyQualityToAudiobook(book);
+    const result = await httpGetJson(`https://archive.org/metadata/${book.id}`, { timeout: 15000, retries: 1 });
+    if (!result.ok || !result.data) return applyQualityToAudiobook(book);
 
-    const data = await res.json();
-    const files: any[] = data.files || [];
+    const files: any[] = result.data.files || [];
 
     if (files.length > 0) {
       const { availableQualities, qualitySegments, deduplicatedTracks } =

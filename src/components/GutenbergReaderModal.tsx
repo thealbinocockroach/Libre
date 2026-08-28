@@ -64,6 +64,7 @@ import {
   formatTrueDuration,
 } from '../utils/activityTracker';
 import { saveBookNote, deleteBookNote } from '../utils/notesStorage';
+import { httpGetJson } from '../utils/httpClient';
 
 interface GutenbergReaderModalProps {
   isOpen: boolean;
@@ -771,17 +772,9 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
 
     try {
       const dictUrl = `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(clean)}`;
-      let data: any = null;
-
-      if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.()) {
-        const { Http } = await import('@capacitor-community/http');
-        const response = await Http.request({ method: 'GET', url: dictUrl, headers: { Accept: 'application/json' } });
-        data = response.data;
-      } else {
-        const res = await fetch(dictUrl);
-        if (!res.ok) throw new Error(`No definition found for "${clean}".`);
-        data = await res.json();
-      }
+      const result = await httpGetJson(dictUrl, { timeout: 10000, retries: 1 });
+      if (!result.ok || !result.data) throw new Error(`No definition found for "${clean}".`);
+      const data = result.data;
 
       if (Array.isArray(data) && data.length > 0) {
         setDictionaryData(data[0]);
