@@ -27,6 +27,8 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class DownloadService extends Service {
 
@@ -36,10 +38,17 @@ public class DownloadService extends Service {
     static final String CHANNEL_ID = "libreaudio_download_channel";
     static final int NOTIF_ID = 5151;
 
-    private volatile boolean cancelled = false;
-    private Thread worker;
+    private static final String UA = "LibreAudio/1.0 (Android; +https://libriaudio.app)";
+    private static final int MIN_VALID_BYTES = 2048;
+
+    private volatile boolean batchCancelled = false;
+    private Thread batchWorker;
+
     private String activeBookId;
     private String activeBookTitle;
+
+    /** Per-chapter job state keyed by "bookId/chapterId". */
+    private final Map<String, ChapterJob> chapterJobs = new ConcurrentHashMap<>();
 
     @Override
     public void onCreate() {
@@ -52,46 +61,353 @@ public class DownloadService extends Service {
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true);
-        Notification notification = builder.build();
-        startForeground(NOTIF_ID, notification);
+        startForeground(NOTIF_ID, builder.build());
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent == null) {
-            return START_NOT_STICKY;
-        }
+        if (intent == null) return START_NOT_STICKY;
         String action = intent.getAction();
+        if (action == null) action = "start";
 
-        if ("cancel".equals(action)) {
-            cancelled = true;
-            if (worker != null) {
-                worker.interrupt();
-            }
-            stopSelf();
-            if (pluginRef != null) {
-                JSObject data = new JSObject();
-                data.put("bookId", activeBookId == null ? "" : activeBookId);
-                pluginRef.emitEvent("downloadCancelled", data);
-            }
-            return START_NOT_STICKY;
+        switch (action) {
+            case "cancel":
+                handleBatchCancel();
+                return START_NOT_STICKY;
+            case "downloadChapter":
+                handleChapterDownload(intent);
+                return START_STICKY;
+            case "pauseChapter":
+                handleChapterPause(intent.getStringExtra("bookId"), intent.getStringExtra("chapterId"));
+                return START_STICKY;
+            case "resumeChapter":
+                handleChapterResume(intent);
+                return START_STICKY;
+            case "cancelChapter":
+                handleChapterCancel(intent.getStringExtra("bookId"), intent.getStringExtra("chapterId"));
+                return START_STICKY;
+            default:
+                handleBatchDownload(intent);
+                return START_STICKY;
         }
+    }
 
-        // start payload
-        cancelled = false;
+    /* ---------- batch download (legacy book-level) ---------- */
+
+    private void handleBatchDownload(Intent intent) {
+        batchCancelled = false;
         activeBookId = intent.getStringExtra("bookId");
         activeBookTitle = intent.getStringExtra("bookTitle");
         String tracksJson = intent.getStringExtra("tracksJson");
 
         emitProgress(activeBookTitle, 0, 0, "Preparing...", 0, 0);
 
-        worker = new Thread(() -> runDownload(tracksJson));
-        worker.start();
-
-        return START_STICKY;
+        batchWorker = new Thread(() -> runBatchDownload(tracksJson));
+        batchWorker.start();
     }
 
-    private void runDownload(String tracksJson) {
+    private void handleBatchCancel() {
+        batchCancelled = true;
+        if (batchWorker != null) batchWorker.interrupt();
+        stopSelf();
+        if (pluginRef != null) {
+            JSObject data = new JSObject();
+            data.put("bookId", activeBookId == null ? "" : activeBookId);
+            pluginRef.emitEvent("downloadCancelled", data);
+        }
+    }
+
+    private void runBatchDownload(String tracksJson) {
+        List<TrackInfo> tracks = parseTracks(tracksJson);
+        if (tracks.isEmpty()) {
+            emitError(activeBookId, "No tracks to download");
+            return;
+        }
+
+        int total = tracks.size();
+        int completed = 0;
+
+        for (int i = 0; i < total; i++) {
+            if (batchCancelled || batchWorker.isInterrupted()) return;
+            TrackInfo t = tracks.get(i);
+            String chapterId = t.trackId != null && !t.trackId.isEmpty() ? t.trackId : t.trackKey;
+            File outFile = chapterFile(activeBookId, chapterId);
+
+            if (isValidFile(outFile)) {
+                emitTrackReady(t, outFile.getAbsolutePath(), i, total, completed);
+                completed++;
+                continue;
+            }
+
+            ChapterJob job = new ChapterJob(activeBookId, chapterId);
+            chapterJobs.put(job.key(), job);
+
+            final int completedAtStart = completed;
+            final int totalTracks = total;
+            try {
+                boolean ok = downloadToFile(t.audioUrl, outFile, job, (loaded, totalBytes) -> {
+                    int percent = totalBytes > 0
+                            ? (int) Math.min(99, Math.floor((double) (completedAtStart + (double) loaded / Math.max(1, totalBytes)) / Math.max(1, totalTracks) * 100))
+                            : (int) Math.min(99, Math.floor((double) completedAtStart / Math.max(1, totalTracks) * 100));
+                    emitProgress(activeBookTitle, percent, loaded, t.title, completedAtStart, totalTracks);
+                    emitChapterProgress(activeBookId, chapterId, "downloading", percent, loaded, totalBytes, null);
+                });
+                chapterJobs.remove(job.key());
+                if (!ok) {
+                    if (batchCancelled) return;
+                    emitError(activeBookId, "Failed to download: " + t.title);
+                    return;
+                }
+                emitTrackReady(t, outFile.getAbsolutePath(), i, total, completed);
+                emitChapterProgress(activeBookId, chapterId, "completed", 100, outFile.length(), outFile.length(), null);
+                completed++;
+            } catch (Exception e) {
+                chapterJobs.remove(job.key());
+                emitError(activeBookId, "Download error: " + e.getMessage());
+                return;
+            }
+        }
+
+        emitComplete(activeBookId, total, completed);
+        stopForeground(true);
+        stopSelf();
+    }
+
+    /* ---------- single-chapter download ---------- */
+
+    private void handleChapterDownload(Intent intent) {
+        String bookId = intent.getStringExtra("bookId");
+        String chapterId = intent.getStringExtra("chapterId");
+        String remoteUrl = intent.getStringExtra("remoteUrl");
+        String bookTitle = intent.getStringExtra("bookTitle");
+
+        if (bookId == null || chapterId == null || remoteUrl == null) return;
+
+        String key = bookId + "/" + chapterId;
+        ChapterJob existing = chapterJobs.get(key);
+        if (existing != null && existing.worker != null && existing.worker.isAlive()) return;
+
+        ChapterJob job = new ChapterJob(bookId, chapterId);
+        chapterJobs.put(key, job);
+
+        emitChapterProgress(bookId, chapterId, "queued", 0, 0, 0, null);
+        updateNotification(bookTitle != null ? bookTitle : bookId, chapterId, 0, 0, 1);
+
+        job.worker = new Thread(() -> {
+            File outFile = chapterFile(bookId, chapterId);
+            if (isValidFile(outFile)) {
+                emitChapterProgress(bookId, chapterId, "completed", 100, outFile.length(), outFile.length(), null);
+                chapterJobs.remove(key);
+                return;
+            }
+            try {
+                boolean ok = downloadToFile(remoteUrl, outFile, job, (loaded, totalBytes) -> {
+                    int percent = totalBytes > 0 ? (int) Math.min(99, (loaded * 100) / totalBytes) : 0;
+                    emitChapterProgress(bookId, chapterId, job.paused ? "paused" : "downloading", percent, loaded, totalBytes, null);
+                    updateNotification(bookTitle != null ? bookTitle : bookId, chapterId, percent, 0, 1);
+                });
+                if (job.cancelled) {
+                    emitChapterProgress(bookId, chapterId, "cancelled", 0, 0, 0, null);
+                } else if (!ok) {
+                    emitChapterProgress(bookId, chapterId, "failed", 0, 0, 0, "Download failed");
+                } else {
+                    emitChapterProgress(bookId, chapterId, "completed", 100, outFile.length(), outFile.length(), null);
+                }
+            } catch (Exception e) {
+                emitChapterProgress(bookId, chapterId, "failed", 0, 0, 0, e.getMessage());
+            } finally {
+                chapterJobs.remove(key);
+            }
+        });
+        job.worker.start();
+    }
+
+    private void handleChapterPause(String bookId, String chapterId) {
+        if (bookId == null || chapterId == null) return;
+        ChapterJob job = chapterJobs.get(bookId + "/" + chapterId);
+        if (job != null) {
+            job.paused = true;
+            emitChapterProgress(bookId, chapterId, "paused", job.lastPercent, job.lastLoaded, job.lastTotal, null);
+        }
+    }
+
+    private void handleChapterResume(Intent intent) {
+        String bookId = intent.getStringExtra("bookId");
+        String chapterId = intent.getStringExtra("chapterId");
+        String remoteUrl = intent.getStringExtra("remoteUrl");
+        if (bookId == null || chapterId == null || remoteUrl == null) return;
+
+        ChapterJob job = chapterJobs.get(bookId + "/" + chapterId);
+        if (job != null) {
+            job.paused = false;
+            job.resumeRequested = true;
+        } else {
+            handleChapterDownload(intent);
+        }
+    }
+
+    private void handleChapterCancel(String bookId, String chapterId) {
+        if (bookId == null || chapterId == null) return;
+        String key = bookId + "/" + chapterId;
+        ChapterJob job = chapterJobs.get(key);
+        if (job != null) {
+            job.cancelled = true;
+            if (job.worker != null) job.worker.interrupt();
+            chapterJobs.remove(key);
+        }
+        File tmp = new File(chapterFile(bookId, chapterId).getAbsolutePath() + ".tmp");
+        if (tmp.exists()) tmp.delete();
+        emitChapterProgress(bookId, chapterId, "cancelled", 0, 0, 0, null);
+    }
+
+    /* ---------- core download with redirects & headers ---------- */
+
+    private boolean downloadToFile(String audioUrl, File outFile, ChapterJob job, ProgressCallback cb) throws Exception {
+        if (outFile.getParentFile() != null && !outFile.getParentFile().exists()) {
+            outFile.getParentFile().mkdirs();
+        }
+
+        File tmp = new File(outFile.getAbsolutePath() + ".tmp");
+        long existingBytes = tmp.exists() ? tmp.length() : 0;
+
+        HttpURLConnection conn = openConnectionWithRedirects(audioUrl);
+        try {
+            if (existingBytes > 0) {
+                conn.setRequestProperty("Range", "bytes=" + existingBytes + "-");
+            }
+            conn.connect();
+
+            int responseCode = conn.getResponseCode();
+            if (responseCode == 416) {
+                // Range not satisfiable — file may already be complete
+                if (isValidFile(outFile)) return true;
+                existingBytes = 0;
+                conn.disconnect();
+                conn = openConnectionWithRedirects(audioUrl);
+                conn.connect();
+                responseCode = conn.getResponseCode();
+            }
+
+            if (responseCode < 200 || responseCode >= 400) {
+                return false;
+            }
+
+            long totalBytes = conn.getContentLengthLong();
+            if (totalBytes < 0) totalBytes = 0;
+            if (existingBytes > 0 && totalBytes > 0) totalBytes += existingBytes;
+
+            InputStream in = new BufferedInputStream(conn.getInputStream());
+            OutputStream out = new FileOutputStream(tmp, existingBytes > 0);
+            byte[] buffer = new byte[64 * 1024];
+            long loaded = existingBytes;
+            int read;
+            long lastEmit = 0;
+
+            while ((read = in.read(buffer)) != -1) {
+                if (job.cancelled || Thread.currentThread().isInterrupted()) {
+                    in.close();
+                    out.close();
+                    return false;
+                }
+                while (job.paused && !job.cancelled && !job.resumeRequested) {
+                    Thread.sleep(200);
+                }
+                if (job.cancelled) {
+                    in.close();
+                    out.close();
+                    return false;
+                }
+                job.resumeRequested = false;
+
+                out.write(buffer, 0, read);
+                loaded += read;
+                job.lastLoaded = loaded;
+                job.lastTotal = totalBytes;
+                job.lastPercent = totalBytes > 0 ? (int) Math.min(99, (loaded * 100) / totalBytes) : 0;
+
+                long now = System.currentTimeMillis();
+                if (now - lastEmit > 250) {
+                    lastEmit = now;
+                    cb.onProgress(loaded, totalBytes);
+                }
+            }
+            out.flush();
+            in.close();
+            out.close();
+
+            if (job.cancelled) return false;
+
+            if (outFile.exists()) outFile.delete();
+            boolean renamed = tmp.renameTo(outFile);
+            if (!renamed) {
+                copyFile(tmp, outFile);
+                tmp.delete();
+            }
+            cb.onProgress(outFile.length(), outFile.length());
+            return isValidFile(outFile);
+        } finally {
+            conn.disconnect();
+        }
+    }
+
+    private HttpURLConnection openConnectionWithRedirects(String urlString) throws Exception {
+        String current = urlString;
+        if (current.startsWith("http://")) {
+            current = "https://" + current.substring(7);
+        }
+
+        for (int i = 0; i < 10; i++) {
+            URL url = new URL(current);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(30000);
+            conn.setReadTimeout(60000);
+            conn.setInstanceFollowRedirects(false);
+            conn.setRequestProperty("User-Agent", UA);
+            conn.setRequestProperty("Accept", "*/*");
+            conn.setRequestProperty("Accept-Language", "en-US,en;q=0.9");
+            conn.setRequestProperty("Referer", "https://archive.org/");
+
+            int code = conn.getResponseCode();
+            if (code == HttpURLConnection.HTTP_MOVED_PERM
+                    || code == HttpURLConnection.HTTP_MOVED_TEMP
+                    || code == 303 || code == 307 || code == 308) {
+                String location = conn.getHeaderField("Location");
+                conn.disconnect();
+                if (location == null || location.isEmpty()) {
+                    throw new Exception("Redirect without Location header");
+                }
+                if (location.startsWith("http://")) {
+                    location = "https://" + location.substring(7);
+                }
+                if (!location.startsWith("http")) {
+                    location = new URL(url, location).toString();
+                }
+                current = location;
+                continue;
+            }
+            return conn;
+        }
+        throw new Exception("Too many redirects");
+    }
+
+    /* ---------- file paths ---------- */
+
+    static File chapterFile(Context ctx, String bookId, String chapterId) {
+        File dir = new File(ctx.getFilesDir(), "audiobooks/" + bookId);
+        return new File(dir, chapterId + ".mp3");
+    }
+
+    private File chapterFile(String bookId, String chapterId) {
+        return chapterFile(this, bookId, chapterId);
+    }
+
+    private boolean isValidFile(File f) {
+        return f.exists() && f.length() > MIN_VALID_BYTES;
+    }
+
+    /* ---------- helpers ---------- */
+
+    private List<TrackInfo> parseTracks(String tracksJson) {
         List<TrackInfo> tracks = new ArrayList<>();
         try {
             if (tracksJson != null && !tracksJson.isEmpty()) {
@@ -108,157 +424,41 @@ public class DownloadService extends Service {
                     tracks.add(t);
                 }
             }
-        } catch (Exception e) {
-            emitError(activeBookId, "Invalid download list");
-            return;
-        }
-
-        if (tracks.isEmpty()) {
-            emitError(activeBookId, "No tracks to download");
-            return;
-        }
-
-        int total = tracks.size();
-        int completed = 0;
-
-        for (int i = 0; i < total; i++) {
-            if (cancelled || worker.isInterrupted()) {
-                return;
-            }
-            TrackInfo t = tracks.get(i);
-            // skip tracks already on disk from a previous partial run
-            File outFile = trackFile(activeBookId, t.trackKey);
-            boolean alreadyHave = outFile.exists() && outFile.length() > 2048;
-            if (alreadyHave) {
-                emitTrackReady(t, outFile.getAbsolutePath(), i, total, completed);
-                completed++;
-                continue;
-            }
-
-            try {
-                boolean ok = downloadOne(t, outFile, i, total, completed);
-                if (!ok) {
-                    if (cancelled) {
-                        return;
-                    }
-                    emitError(activeBookId, "Failed to download: " + t.title);
-                    return;
-                }
-                emitTrackReady(t, outFile.getAbsolutePath(), i, total, completed);
-                completed++;
-            } catch (Exception e) {
-                emitError(activeBookId, "Download error: " + e.getMessage());
-                return;
-            }
-        }
-
-        emitComplete(activeBookId, total, completed);
-        stopForeground(true);
-        stopSelf();
+        } catch (Exception ignored) {}
+        return tracks;
     }
 
-    /**
-     * Stream-download a single track returning real byte progress.
-     */
-    private boolean downloadOne(TrackInfo t, File outFile, int index, int total, int completed) {
-        HttpURLConnection conn = null;
-        InputStream in = null;
-        OutputStream out = null;
-        File tmp = new File(outFile.getParentFile(), outFile.getName() + ".tmp");
-        try {
-            if (outFile.getParentFile() != null && !outFile.getParentFile().exists()) {
-                outFile.getParentFile().mkdirs();
-            }
-            URL url = new URL(t.audioUrl);
-            conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(30000);
-            conn.setReadTimeout(30000);
-            conn.setInstanceFollowRedirects(true);
-            conn.setRequestProperty("User-Agent", "LibreAudio/1.0 (Android)");
-            conn.connect();
-
-            int responseCode = conn.getResponseCode();
-            if (responseCode < 200 || responseCode >= 400) {
-                return false;
-            }
-
-            long totalBytes = conn.getContentLength();
-            if (totalBytes < 0) totalBytes = 0;
-
-            in = new BufferedInputStream(conn.getInputStream());
-            out = new FileOutputStream(tmp);
-
-            byte[] buffer = new byte[64 * 1024];
-            long loaded = 0;
-            int read;
-            long lastEmit = 0;
-
-            while ((read = in.read(buffer)) != -1) {
-                if (cancelled || worker.isInterrupted()) {
-                    return false;
-                }
-                out.write(buffer, 0, read);
-                loaded += read;
-                long now = System.currentTimeMillis();
-                // throttle event storm
-                if (now - lastEmit > 250 || loaded >= totalBytes) {
-                    lastEmit = now;
-                    int percent;
-                    if (totalBytes > 0) {
-                        percent = (int) Math.min(99, Math.floor((double) (completed + (long) ((double) loaded / Math.max(1, totalBytes))) / Math.max(1, total) * 100));
-                    } else {
-                        percent = (int) Math.min(99, Math.floor((double) completed / Math.max(1, total) * 100));
-                    }
-                    emitProgress(activeBookTitle, percent, loaded, t.title, completed, total);
-                }
-            }
-            out.flush();
-
-            if (cancelled) {
-                return false;
-            }
-
-            // rename tmp -> final
-            if (outFile.exists()) {
-                outFile.delete();
-            }
-            boolean renamed = tmp.renameTo(outFile);
-            if (!renamed) {
-                copyFile(tmp, outFile);
-                tmp.delete();
-            }
-
-            return outFile.exists() && outFile.length() > 2048;
-        } catch (Exception e) {
-            return false;
-        } finally {
-            if (in != null) try { in.close(); } catch (Exception ignored) {}
-            if (out != null) try { out.close(); } catch (Exception ignored) {}
-            if (conn != null) conn.disconnect();
-            if (tmp.exists() && !outFile.exists()) {
-                tmp.delete();
-            }
-        }
-    }
-
-    private void copyFile(File src, File dst) {
+    private void copyFile(File src, File dst) throws Exception {
         try (InputStream is = new BufferedInputStream(new java.io.FileInputStream(src));
-             OutputStream os = new java.io.FileOutputStream(dst)) {
+             OutputStream os = new FileOutputStream(dst)) {
             byte[] buf = new byte[64 * 1024];
             int n;
             while ((n = is.read(buf)) != -1) os.write(buf, 0, n);
-        } catch (Exception ignored) {}
+        }
     }
 
-    private File trackFile(String bookId, String trackKey) {
-        File dir = new File(getFilesDir(), "libreaudio_downloads/" + bookId);
-        return new File(dir, trackKey + ".mp3");
+    static boolean activeInstanceBusy() {
+        if (instance == null) return false;
+        if (instance.batchWorker != null && instance.batchWorker.isAlive()) return true;
+        for (ChapterJob job : instance.chapterJobs.values()) {
+            if (job.worker != null && job.worker.isAlive()) return true;
+        }
+        return false;
     }
 
     /* ---------- event helpers ---------- */
 
-    static boolean activeInstanceBusy() {
-        return instance != null && instance.worker != null && instance.worker.isAlive();
+    private void emitChapterProgress(String bookId, String chapterId, String status,
+                                     int percent, long loaded, long total, String error) {
+        JSObject data = new JSObject();
+        data.put("bookId", bookId);
+        data.put("chapterId", chapterId);
+        data.put("status", status);
+        data.put("percent", percent);
+        data.put("downloadedBytes", loaded);
+        data.put("totalBytes", total);
+        if (error != null) data.put("error", error);
+        if (pluginRef != null) pluginRef.emitEvent("downloadProgress", data);
     }
 
     private void emitProgress(String bookTitle, int percent, long loadedBytes, String trackTitle, int completedTracks, int totalTracks) {
@@ -293,8 +493,10 @@ public class DownloadService extends Service {
         data.put("bookId", bookId);
         data.put("totalTracks", total);
         data.put("completedTracks", completed);
-        if (pluginRef != null) pluginRef.emitEvent("downloadComplete", data);
-        if (pluginRef != null) pluginRef.emitEvent("downloadFinished", data);
+        if (pluginRef != null) {
+            pluginRef.emitEvent("downloadComplete", data);
+            pluginRef.emitEvent("downloadFinished", data);
+        }
     }
 
     private void emitError(String bookId, String message) {
@@ -357,10 +559,13 @@ public class DownloadService extends Service {
 
     @Override
     public void onDestroy() {
-        cancelled = true;
-        if (worker != null) {
-            worker.interrupt();
+        batchCancelled = true;
+        if (batchWorker != null) batchWorker.interrupt();
+        for (ChapterJob job : chapterJobs.values()) {
+            job.cancelled = true;
+            if (job.worker != null) job.worker.interrupt();
         }
+        chapterJobs.clear();
         stopForeground(true);
         instance = null;
         super.onDestroy();
@@ -372,7 +577,30 @@ public class DownloadService extends Service {
         return null;
     }
 
-    /* ---------- data holder ---------- */
+    private interface ProgressCallback {
+        void onProgress(long loaded, long totalBytes);
+    }
+
+    private static class ChapterJob {
+        final String bookId;
+        final String chapterId;
+        volatile boolean paused;
+        volatile boolean cancelled;
+        volatile boolean resumeRequested;
+        volatile long lastLoaded;
+        volatile long lastTotal;
+        volatile int lastPercent;
+        Thread worker;
+
+        ChapterJob(String bookId, String chapterId) {
+            this.bookId = bookId;
+            this.chapterId = chapterId;
+        }
+
+        String key() {
+            return bookId + "/" + chapterId;
+        }
+    }
 
     private static class TrackInfo {
         String audioUrl;

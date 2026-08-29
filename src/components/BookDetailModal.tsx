@@ -114,14 +114,24 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
 
     let isMounted = true;
 
-    if (book.tracks.length <= 1) {
+    // Resolve the full tracklist here so the detail page can open instantly and
+    // show its skeleton while chapters/quality data load. This keeps quality
+    // preferences applied no matter how the caller opened the book.
+    const applyIfReady = (fullBook: Audiobook) => {
+      if (!isMounted) return;
+      setResolvedBook(fullBook);
+      setIsLoadingChapters(false);
+      refreshOfflineState(fullBook);
+    };
+
+    if (book.tracks.length > 1 && book.qualitySegments) {
+      // Already fully resolved — apply the saved quality preference synchronously,
+      // avoiding any loading flicker for previously-opened books.
+      applyIfReady(applyQualityToAudiobook(book));
+    } else {
       setIsLoadingChapters(true);
-      resolveFullTracklist(book).then((fullBook) => {
-        if (isMounted) {
-          setResolvedBook(fullBook);
-          setIsLoadingChapters(false);
-          refreshOfflineState(fullBook);
-        }
+      resolveFullTracklist(book).then(applyIfReady).catch(() => {
+        if (isMounted) setIsLoadingChapters(false);
       });
     }
 

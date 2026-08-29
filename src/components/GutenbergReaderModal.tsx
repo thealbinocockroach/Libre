@@ -10,7 +10,6 @@ import {
   List,
   Highlighter,
   StickyNote,
-  Book as BookIcon,
   Search,
   Bookmark as BookmarkIcon,
   Copy,
@@ -40,7 +39,6 @@ import {
   HighlightColor,
   EbookAnnotation,
   EbookBookmark,
-  DictionaryResult,
   PlayerState,
   BookNote,
   NoteColor,
@@ -64,7 +62,7 @@ import {
   formatTrueDuration,
 } from '../utils/activityTracker';
 import { saveBookNote, deleteBookNote } from '../utils/notesStorage';
-import { httpGetJson } from '../utils/httpClient';
+import { launchExternalDictionary, extractLookupWord } from '../utils/dictionaryLauncher';
 
 interface GutenbergReaderModalProps {
   isOpen: boolean;
@@ -149,7 +147,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
   const [annotations, setAnnotations] = useState<EbookAnnotation[]>([]);
   const [bookmarks, setBookmarks] = useState<EbookBookmark[]>([]);
   const [activeSidebarTab, setActiveSidebarTab] = useState<
-    'chapters' | 'highlights' | 'search' | 'dictionary' | 'bookmarks' | null
+    'chapters' | 'highlights' | 'search' | 'bookmarks' | null
   >(null);
 
   // Selection Floating Menu
@@ -176,12 +174,6 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     y: number;
   } | null>(null);
 
-  // Dictionary State
-  const [dictionaryWord, setDictionaryWord] = useState('');
-  const [dictionaryData, setDictionaryData] = useState<DictionaryResult | null>(null);
-  const [isDictLoading, setIsDictLoading] = useState(false);
-  const [dictError, setDictError] = useState<string | null>(null);
-
   // In-Book Search
   const [searchQuery, setSearchQuery] = useState('');
   const [searchMatchIndex, setSearchMatchIndex] = useState(0);
@@ -203,6 +195,12 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
   const targetScrollPercentageRef = useRef<number>(0);
   const isRestoringPositionRef = useRef<boolean>(false);
   const selectionTimerRef = useRef<number | null>(null);
+  const preservedRangeRef = useRef<Range | null>(null);
+  const restoringSelectionRef = useRef(false);
+  const selectionHoldRef = useRef<{ text: string; x: number; y: number } | null>(null);
+  const selectionMenuVisibleRef = useRef(false);
+  const selectionMenuShownAtRef = useRef(0);
+  const SELECTION_DEBOUNCE_MS = 120;
   // Stable ref to the latest selection handler so the document-level
   // `selectionchange` listener does not need to re-subscribe (and cancel its
   // pending timer) on every render. This is critical on touch/Android where the
@@ -255,21 +253,40 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     handleTextSelectionRef.current = handleTextSelection;
   });
   useEffect(() => {
+    selectionMenuVisibleRef.current = !!(selectionMenu && selectionMenu.visible);
+  }, [selectionMenu]);
+  useEffect(() => {
     if (!isOpen) return;
+
     const handler = () => {
+      if (restoringSelectionRef.current) return;
+      const selection = window.getSelection();
+      const active = document.activeElement as HTMLElement | null;
+      if (active?.closest?.('#reader-floating-selection-menu')) return;
+
+      // Non-collapsed: capture immediately so Android WebView doesn't miss the window
+      if (selection && !selection.isCollapsed) {
+        if (selectionTimerRef.current) window.clearTimeout(selectionTimerRef.current);
+        handleTextSelectionRef.current();
+        return;
+      }
+
+      // Collapsed after a selection: keep toolbar visible for the hold period
+      if (selectionHoldRef.current || selectionMenuVisibleRef.current) {
+        if (selectionHoldRef.current) {
+          restorePreservedSelection();
+          setSelectionMenu({
+            visible: true,
+            ...selectionHoldRef.current,
+          });
+        }
+        return;
+      }
+
       if (selectionTimerRef.current) window.clearTimeout(selectionTimerRef.current);
       selectionTimerRef.current = window.setTimeout(() => {
-        const selection = window.getSelection();
-        if (!selection || selection.isCollapsed) {
-          const active = document.activeElement as HTMLElement | null;
-          if (active && active.closest && active.closest('#reader-floating-selection-menu')) {
-            return;
-          }
-          setSelectionMenu(null);
-          return;
-        }
-        handleTextSelectionRef.current();
-      }, 180);
+        setSelectionMenu(null);
+      }, SELECTION_DEBOUNCE_MS);
     };
 
     document.addEventListener('selectionchange', handler);
@@ -599,20 +616,82 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     updateCachedPosition(currentBook.id, currentChapterIndex, progress);
 
     // Dismiss floating selection on active scroll
-    if (selectionMenu) setSelectionMenu(null);
+    if (selectionMenu) {
+      setSelectionMenu(null);
+      selectionHoldRef.current = null;
+      selectionMenuVisibleRef.current = false;
+      preservedRangeRef.current = null;
+    }
     if (activeHighlightPopup) setActiveHighlightPopup(null);
   };
 
   // Text selection detection
+  function restorePreservedSelection() {
+    const range = preservedRangeRef.current;
+    if (!range) return;
+
+    // If the target nodes no longer exist (chapter changed / re-rendered), drop it.
+    let valid = false;
+    try {
+      const start = range.startContainer as Node;
+      const end = range.endContainer as Node;
+      valid =
+        start &&
+        end &&
+        (start.nodeType === 1 || start.nodeType === 3) &&
+        (end.nodeType === 1 || end.nodeType === 3) &&
+        document.documentElement.contains(start) &&
+        document.documentElement.contains(end);
+    } catch {
+      valid = false;
+    }
+    if (!valid) {
+      preservedRangeRef.current = null;
+      return;
+    }
+
+    try {
+      const sel = window.getSelection();
+      if (!sel) return;
+
+      // If the live selection already matches, don't churn the DOM — yanking the
+      // range out on Android WebView is what makes the highlight disappear.
+      if (!sel.isCollapsed && sel.rangeCount > 0) {
+        const cur = sel.getRangeAt(0);
+        if (cur.compareBoundaryPoints(Range.START_TO_START, range) === 0 &&
+            cur.compareBoundaryPoints(Range.END_TO_END, range) === 0) {
+          return;
+        }
+      }
+
+      restoringSelectionRef.current = true;
+      sel.removeAllRanges();
+      const clone = range.cloneRange();
+      try { sel.addRange(clone); } catch { /* ignore */ }
+    } catch {
+      // The document may have changed since the range was captured.
+    } finally {
+      window.setTimeout(() => {
+        restoringSelectionRef.current = false;
+      }, 0);
+    }
+  }
+
   function handleTextSelection() {
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed) {
+      // Keep toolbar if already shown — Android clears selection on finger lift
+      if (selectionMenuVisibleRef.current || selectionHoldRef.current) {
+        restorePreservedSelection();
+        return;
+      }
       setSelectionMenu(null);
       return;
     }
 
     const text = selection.toString().trim();
     if (!text || text.length < 2) {
+      if (selectionMenuVisibleRef.current || selectionHoldRef.current) return;
       setSelectionMenu(null);
       return;
     }
@@ -621,22 +700,69 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     if (articleRef.current && articleRef.current.contains(selection.anchorNode)) {
       try {
         const range = selection.getRangeAt(0);
+        preservedRangeRef.current = range.cloneRange();
         const rect = range.getBoundingClientRect();
         if (rect.width > 0 && rect.height > 0) {
-          setSelectionMenu({
-            visible: true,
+          const menuPos = {
+            visible: true as const,
             x: Math.max(20, Math.min(window.innerWidth - 280, rect.left + rect.width / 2 - 130)),
             y: Math.max(70, rect.top - 54),
             text,
-          });
+          };
+          selectionHoldRef.current = { text: menuPos.text, x: menuPos.x, y: menuPos.y };
+          selectionMenuVisibleRef.current = true;
+          selectionMenuShownAtRef.current = Date.now();
+          setSelectionMenu(menuPos);
         }
       } catch {
-        setSelectionMenu(null);
+        if (!selectionHoldRef.current && !selectionMenuVisibleRef.current) setSelectionMenu(null);
       }
-    } else {
+    } else if (!selectionHoldRef.current && !selectionMenuVisibleRef.current) {
       setSelectionMenu(null);
     }
   }
+
+  const captureSelectionAfterTouch = () => {
+    // Android WebView clears the visible selection on touchend and can drop the
+    // `selectionchange` firing, which made the highlight vanish on finger lift.
+    // Capture promptly, then re-assert the preserved range a couple of times
+    // shortly after so the native handles + tint stay live for further editing.
+    [
+      { d: 0, restore: false },
+      { d: 90, restore: true },
+      { d: 260, restore: true },
+    ].forEach(({ d, restore }) => {
+      window.setTimeout(() => {
+        if (!restore) {
+          handleTextSelectionRef.current();
+          return;
+        }
+        const sel = window.getSelection();
+        const collapsed = !sel || sel.isCollapsed;
+        if (collapsed && (selectionHoldRef.current || selectionMenuVisibleRef.current)) {
+          restorePreservedSelection();
+          handleTextSelectionRef.current();
+        } else {
+          handleTextSelectionRef.current();
+        }
+      }, d);
+    });
+  };
+
+  const clearSelectionState = () => {
+    setSelectionMenu(null);
+    selectionHoldRef.current = null;
+    selectionMenuVisibleRef.current = false;
+    preservedRangeRef.current = null;
+    window.getSelection()?.removeAllRanges();
+  };
+
+  const handleDictionaryLookup = async (rawText: string) => {
+    const word = extractLookupWord(rawText);
+    if (!word) return;
+    await launchExternalDictionary(word);
+    clearSelectionState();
+  };
 
   // Create Highlight
   const createHighlight = (color: HighlightColor) => {
@@ -656,8 +782,40 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     };
 
     saveAnnotations([...annotations, newAnnotation]);
-    setSelectionMenu(null);
-    window.getSelection()?.removeAllRanges();
+    clearSelectionState();
+  };
+
+  // Bookmark the currently selected text (highlights it + stores a text bookmark)
+  const bookmarkFromSelection = () => {
+    if (!selectionMenu || !selectionMenu.text) return;
+    const chapterTitle =
+      currentBook.ebookChapters?.[currentChapterIndex]?.title ||
+      `Chapter ${currentChapterIndex + 1}`;
+
+    const newAnnotation: EbookAnnotation = {
+      id: `ann_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      bookId: currentBook.id,
+      chapterIndex: currentChapterIndex,
+      chapterTitle,
+      text: selectionMenu.text,
+      color: 'gold',
+      createdAt: Date.now(),
+    };
+    saveAnnotations([...annotations, newAnnotation]);
+
+    const newBm: EbookBookmark = {
+      id: `bm_${Date.now()}`,
+      bookId: currentBook.id,
+      chapterIndex: currentChapterIndex,
+      chapterTitle,
+      snippet: selectionMenu.text,
+      scrollPercentage: scrollProgress,
+      createdAt: Date.now(),
+    };
+    saveBookmarks([newBm, ...bookmarks]);
+
+    clearSelectionState();
+    setActiveSidebarTab('bookmarks');
   };
 
   // Open Note Creator from selection
@@ -785,35 +943,6 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
       targetScrollPercentageRef.current = bm.scrollPercentage;
       isRestoringPositionRef.current = true;
       setCurrentChapterIndex(bm.chapterIndex);
-    }
-  };
-
-  // Lookup word in Dictionary
-  const lookupDictionary = async (wordToSearch: string) => {
-    const clean = wordToSearch.replace(/[^a-zA-Z]/g, '').toLowerCase().trim();
-    if (!clean) return;
-
-    setDictionaryWord(clean);
-    setIsDictLoading(true);
-    setDictError(null);
-    setDictionaryData(null);
-    setActiveSidebarTab('dictionary');
-
-    try {
-      const dictUrl = `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(clean)}`;
-      const result = await httpGetJson(dictUrl, { timeout: 10000, retries: 1 });
-      if (!result.ok || !result.data) throw new Error(`No definition found for "${clean}".`);
-      const data = result.data;
-
-      if (Array.isArray(data) && data.length > 0) {
-        setDictionaryData(data[0]);
-      } else {
-        throw new Error('Definition data format unexpected.');
-      }
-    } catch (err) {
-      setDictError(err instanceof Error ? err.message : 'Lookup failed.');
-    } finally {
-      setIsDictLoading(false);
     }
   };
 
@@ -1096,6 +1225,25 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
 
   // Click on Highlight in Text to open mini action card
   const handleContentClick = (e: React.MouseEvent) => {
+    if (showSettingsDropdown) {
+      setShowSettingsDropdown(false);
+      return;
+    }
+    if (showThreeDotMenu) {
+      setShowThreeDotMenu(false);
+      return;
+    }
+    if (selectionMenu) {
+      // A `click` often fires immediately after the touchend that finished a
+      // text selection (especially on Android WebView). If this is that same
+      // gesture, don't tear the selection/menu down — otherwise the highlight
+      // disappears the moment the user lifts their finger.
+      if (Date.now() - selectionMenuShownAtRef.current < 700) {
+        return;
+      }
+      clearSelectionState();
+      return;
+    }
     const target = (e.target as HTMLElement).closest('.libriaudio-hl');
     if (target) {
       const id = target.getAttribute('data-annotation-id');
@@ -1348,7 +1496,10 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
           <div className="relative">
             <button
               id="btn-reader-three-dot"
-              onClick={() => setShowThreeDotMenu(!showThreeDotMenu)}
+              onClick={() => {
+                restorePreservedSelection();
+                setShowThreeDotMenu(!showThreeDotMenu);
+              }}
               className={`p-2 rounded-xl border transition-all ${
                 showThreeDotMenu
                   ? 'bg-[var(--accent)] text-[var(--on-accent)] border-[var(--accent)]'
@@ -1374,16 +1525,6 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
                 >
                   <Search className="w-4 h-4 text-[var(--accent)]" />
                   <span>Search in Book</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setShowThreeDotMenu(false);
-                    setActiveSidebarTab('dictionary');
-                  }}
-                  className="w-full px-4 py-2.5 text-left text-xs flex items-center gap-2.5 hover:bg-[var(--surface-raised)] transition-colors text-[var(--text-main)]"
-                >
-                  <BookIcon className="w-4 h-4 text-[var(--accent)]" />
-                  <span>Dictionary Lookup</span>
                 </button>
                 <div className="my-1 border-t border-[var(--border-subtle)]" />
                 {annotations.length > 0 && (
@@ -1431,10 +1572,10 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
           ref={contentContainerRef}
           id="reader-content-scroll"
           onScroll={handleScroll}
-          onMouseUp={handleTextSelection}
-          onTouchEnd={handleTextSelection}
+          onMouseUp={captureSelectionAfterTouch}
+          onTouchEnd={captureSelectionAfterTouch}
           onClick={handleContentClick}
-          className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-black/20 pb-32 transition-all relative"
+          className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-black/20 pb-32 transition-all relative select-text"
         >
           <div className={`${columnWidths[settings.columnWidth]} mx-auto px-5 py-8 md:px-12 md:py-12`}>
             {isLoading ? (
@@ -1510,7 +1651,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
 
                 <article
                   ref={articleRef}
-                  className={`prose ${currentTheme.prose} ${settings.textAlign === 'justify' ? 'text-justify' : 'text-left'} max-w-full leading-relaxed transition-all`}
+                  className={`prose ${currentTheme.prose} ${settings.textAlign === 'justify' ? 'text-justify' : 'text-left'} max-w-full leading-relaxed transition-all select-text`}
                   style={{
                     fontSize: `${settings.fontSize}px`,
                     lineHeight: settings.lineHeight,
@@ -1592,13 +1733,11 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
                 {activeSidebarTab === 'chapters' && <List className="w-4 h-4 text-[var(--accent)]" />}
                 {activeSidebarTab === 'highlights' && <Highlighter className="w-4 h-4 text-[var(--accent)]" />}
                 {activeSidebarTab === 'search' && <Search className="w-4 h-4 text-[var(--accent)]" />}
-                {activeSidebarTab === 'dictionary' && <BookIcon className="w-4 h-4 text-[var(--accent)]" />}
                 {activeSidebarTab === 'bookmarks' && <BookmarkIcon className="w-4 h-4 text-[var(--accent)]" />}
                 <h3 className="text-xs uppercase font-bold tracking-wider opacity-90">
                   {activeSidebarTab === 'chapters' && 'Table of Contents'}
                   {activeSidebarTab === 'highlights' && `Highlights & Notes (${annotations.length})`}
                   {activeSidebarTab === 'search' && 'Search in Book'}
-                  {activeSidebarTab === 'dictionary' && 'Dictionary'}
                   {activeSidebarTab === 'bookmarks' && `Bookmarks (${bookmarks.length})`}
                 </h3>
               </div>
@@ -1824,86 +1963,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
                 </div>
               )}
 
-              {/* 4. Dictionary Lookup Tab */}
-              {activeSidebarTab === 'dictionary' && (
-                <div className="space-y-4">
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      lookupDictionary(dictionaryWord);
-                    }}
-                    className="flex gap-2"
-                  >
-                    <input
-                      type="text"
-                      value={dictionaryWord}
-                      onChange={(e) => setDictionaryWord(e.target.value)}
-                      placeholder="Look up word definition..."
-                      className="flex-1 px-3 py-2 rounded-xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] text-xs focus:outline-none focus:border-[var(--accent)]"
-                    />
-                    <button
-                      type="submit"
-                      disabled={isDictLoading || !dictionaryWord.trim()}
-                      className="px-3 py-2 rounded-xl bg-[var(--accent)] text-[var(--on-accent)] font-semibold text-xs disabled:opacity-50"
-                    >
-                      Define
-                    </button>
-                  </form>
-
-                  {isDictLoading ? (
-                    <div className="text-center py-8 opacity-60">
-                      <div className="w-6 h-6 rounded-full border-2 border-t-[#C5A059] border-[var(--border-subtle)] animate-spin mx-auto mb-2" />
-                      <p className="text-xs">Fetching definition...</p>
-                    </div>
-                  ) : dictError ? (
-                    <div className="p-4 rounded-xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] text-xs opacity-80 text-center space-y-1">
-                      <p className="font-semibold text-[var(--accent)]">Word not found</p>
-                      <p className="text-[11px] opacity-70">{dictError}</p>
-                    </div>
-                  ) : dictionaryData ? (
-                    <div className="space-y-4 text-xs animate-in fade-in">
-                      <div className="border-b border-[var(--border-subtle)] pb-3">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-base font-bold capitalize text-[var(--accent)]">
-                            {dictionaryData.word}
-                          </h4>
-                          {dictionaryData.phonetic && (
-                            <span className="font-mono text-[11px] opacity-60">
-                              {dictionaryData.phonetic}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {dictionaryData.meanings?.map((m, idx) => (
-                        <div key={idx} className="space-y-2">
-                          <span className="px-2 py-0.5 rounded-md bg-[var(--accent-dim)] text-[var(--accent)] text-[10px] font-semibold uppercase tracking-wider">
-                            {m.partOfSpeech}
-                          </span>
-                          <ul className="space-y-2 pl-2">
-                            {m.definitions?.slice(0, 3).map((d, dIdx) => (
-                              <li key={dIdx} className="space-y-1">
-                                <p className="opacity-90 leading-relaxed">• {d.definition}</p>
-                                {d.example && (
-                                  <p className="text-[11px] italic opacity-60 pl-2">
-                                    "{d.example}"
-                                  </p>
-                                )}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-8 opacity-50 text-xs">
-                      Select any word in the book or search above to view its definition, pronunciation, and examples.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* 5. Bookmarks Tab */}
+              {/* 4. Bookmarks Tab */}
               {activeSidebarTab === 'bookmarks' && (
                 <div className="space-y-3">
                   <button
@@ -1953,8 +2013,9 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
       {selectionMenu && selectionMenu.visible && (
         <div
           id="reader-floating-selection-menu"
-          className="fixed z-50 flex items-center gap-1 bg-[var(--surface)] backdrop-blur-md border border-[var(--border-subtle)] px-2 py-1.5 rounded-full shadow-2xl animate-in zoom-in-95 duration-100 text-[var(--text-main)] font-sans text-xs"
+          className="fixed z-[80] flex items-center gap-1 bg-[var(--surface)] backdrop-blur-md border border-[var(--border-subtle)] px-2 py-1.5 rounded-full shadow-2xl animate-in zoom-in-95 duration-100 text-[var(--text-main)] font-sans text-xs"
           style={{ top: `${selectionMenu.y}px`, left: `${selectionMenu.x}px` }}
+          onPointerDown={(e) => e.stopPropagation()}
         >
           {/* Highlight Color Pickers */}
           <div className="flex items-center gap-1 px-1 border-r border-[var(--border-subtle)]">
@@ -1978,14 +2039,24 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
             <span className="text-[11px]">Note</span>
           </button>
 
-          {/* Define in Dictionary */}
+          {/* Bookmark Selected Text */}
           <button
-            onClick={() => lookupDictionary(selectionMenu.text)}
-            className="p-1.5 rounded-lg hover:bg-[var(--surface-raised)] flex items-center gap-1 font-medium"
-            title="Define Word"
+            onClick={bookmarkFromSelection}
+            className="p-1.5 rounded-lg hover:bg-[var(--surface-raised)] flex items-center gap-1 text-[var(--accent)] font-medium"
+            title="Bookmark selected text"
           >
-            <BookIcon className="w-3.5 h-3.5" />
-            <span className="text-[11px]">Define</span>
+            <BookmarkIcon className="w-3.5 h-3.5" />
+            <span className="text-[11px]">Mark</span>
+          </button>
+
+          {/* Dictionary — opens WordWeb / system dictionary app */}
+          <button
+            onClick={() => handleDictionaryLookup(selectionMenu.text)}
+            className="p-1.5 rounded-lg hover:bg-[var(--surface-raised)] flex items-center gap-1 font-medium"
+            title="Look up in Dictionary App"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span className="text-[11px]">Dictionary</span>
           </button>
 
           {/* Copy Text */}
@@ -2141,11 +2212,29 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
         </div>
       )}
 
+      {/* Tap-outside backdrop for Typography & Style panel */}
+      {showSettingsDropdown && (
+        <div
+          className="fixed inset-0 z-[60] bg-transparent"
+          aria-hidden
+          style={{ pointerEvents: 'auto', touchAction: 'manipulation' }}
+          onPointerDown={(e) => {
+            if ((e.target as HTMLElement).closest('#reader-floating-selection-menu')) return;
+            setShowSettingsDropdown(false);
+          }}
+          onClick={(e) => {
+            if ((e.target as HTMLElement).closest('#reader-floating-selection-menu')) return;
+            setShowSettingsDropdown(false);
+          }}
+        />
+      )}
+
       {/* Reader Typography & Appearance Floating Settings Panel */}
       {showSettingsDropdown && (
         <div
           id="reader-settings-panel"
-          className={`absolute top-15 right-4 p-5 rounded-2xl border z-40 w-80 shadow-2xl font-sans animate-in slide-in-from-top-2 duration-150 ${currentTheme.panel}`}
+          className={`fixed top-20 right-4 p-5 rounded-2xl border z-[70] w-80 shadow-2xl font-sans animate-in slide-in-from-top-2 duration-150 ${currentTheme.panel}`}
+          onPointerDown={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)] mb-4">
             <h3 className="text-xs uppercase font-bold text-[var(--accent)] tracking-wider">
@@ -2372,7 +2461,10 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
         {/* Typography & Settings */}
         <button
           id="btn-reader-bottom-settings"
-          onClick={() => setShowSettingsDropdown(!showSettingsDropdown)}
+          onClick={() => {
+            restorePreservedSelection();
+            setShowSettingsDropdown(!showSettingsDropdown);
+          }}
           className={`p-2 rounded-xl border transition-all cursor-pointer ${
             showSettingsDropdown
               ? 'bg-[var(--surface-raised)] border-[var(--border-subtle)]'

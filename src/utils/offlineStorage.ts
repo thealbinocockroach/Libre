@@ -343,6 +343,33 @@ export const getAllOfflineBooks = getDownloadedBooks;
 export const isBookOfflineReady = isBookDownloaded;
 
 /**
+ * Resolve the best playback URL: native file, IndexedDB blob, or remote stream.
+ */
+export async function getPlayableAudioUrl(
+  bookId: string,
+  trackId: string,
+  remoteUrl: string,
+  trackNumber?: number,
+): Promise<string> {
+  if (isNativeAndroid()) {
+    try {
+      const { audioDownloadService } = await import('./audioDownloadService');
+      const uri = await audioDownloadService.getPlayableUri(bookId, trackId, remoteUrl);
+      if (uri.startsWith('file://')) return uri;
+    } catch {
+      // fall through
+    }
+  }
+
+  const blobUrl = await getOfflineAudioTrackUrl(bookId, trackId, trackNumber);
+  if (blobUrl) return blobUrl;
+
+  return remoteUrl.startsWith('http://')
+    ? remoteUrl.replace('http://', 'https://')
+    : remoteUrl;
+}
+
+/**
  * Retrieve an offline blob URL for an audio track (with resilient fallback matching)
  */
 export async function getOfflineAudioTrackUrl(

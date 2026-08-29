@@ -174,3 +174,23 @@ article.prose figcaption {
 .libriaudio-img-error {
   display: none !important;
 }
+
+/* Ebook Reader: text selection must stay visible after the finger lifts.
+   Native Android WebView selection handles keep the highlight up; these rules
+   make sure the selection tint is never lost while our floating toolbar is open. */
+#reader-content-scroll {
+  -webkit-tap-highlight-color: transparent;
+}
+#reader-content-scroll ::selection {
+  background: rgba(197, 160, 89, 0.45);
+  color: inherit;
+  -webkit-tap-highlight-color: rgba(197, 160, 89, 0.45);
+}
+#reader-content-scroll *::selection {
+  background: rgba(197, 160, 89, 0.45);
+  color: inherit;
+}
+#reader-content-scroll .libriaudio-sel-hold ::selection,
+#reader-content-scroll .libriaudio-sel-hold *::selection {
+  background: rgba(197, 160, 89, 0.5) !important;
+}

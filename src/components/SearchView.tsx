@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Audiobook, AudioTrack } from '../types';
-import { Search, X, Play, Clock, Sparkles, BookOpen, SearchX, Download, Check, Ghost, Compass, Brain, Anchor, Heart, Feather, Landmark, Smile, LayoutGrid } from 'lucide-react';
-import { resolveFullTracklist, mapArchiveDocToAudiobook, LIBRIVOX_GENRES } from '../utils/librivoxRecommendations';
+import { Search, X, Play, Clock, BookOpen, SearchX, Ghost, Compass, Brain, Anchor, Heart, Feather, Landmark, Smile, LayoutGrid, ArrowLeft } from 'lucide-react';
+import {
+  resolveFullTracklist,
+  mapArchiveDocToAudiobook,
+  LIBRIVOX_GENRES,
+  fetchLibriVoxCategory,
+  GenreCategory,
+} from '../utils/librivoxRecommendations';
 import { downloadAudiobook, isBookDownloaded } from '../utils/offlineStorage';
 import { getSavedQualityPreference } from '../utils/audioQualityManager';
 import { httpGetJson } from '../utils/httpClient';
@@ -31,7 +37,6 @@ export const SearchView: React.FC<SearchViewProps> = ({
   onSelectBook,
   onReadBook,
   onUploadEpub,
-  onOpenGenre,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedTerm, setDebouncedTerm] = useState('');
@@ -42,6 +47,10 @@ export const SearchView: React.FC<SearchViewProps> = ({
   const [downloadedStatusMap, setDownloadedStatusMap] = useState<Record<string, boolean>>({});
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [activeGenre, setActiveGenre] = useState<GenreCategory | null>(null);
+  const [genreBooks, setGenreBooks] = useState<Audiobook[]>([]);
+  const [isGenreLoading, setIsGenreLoading] = useState(false);
+  const [genreError, setGenreError] = useState<string | null>(null);
 
   const HISTORY_KEY = 'libriaudio_search_history';
 
@@ -248,36 +257,87 @@ export const SearchView: React.FC<SearchViewProps> = ({
     }
   };
 
-  const handleBookClick = async (book: Audiobook) => {
+  const handleBookClick = (book: Audiobook) => {
     saveToHistory(searchTerm);
-    setResolvingBookId(book.id);
-    const resolved = await resolveFullTracklist(book);
-    setResolvingBookId(null);
-    onSelectBook(resolved);
+    // Open the book page immediately; BookDetailModal resolves the full
+    // tracklist itself and shows its skeleton while loading.
+    onSelectBook(book);
+  };
+
+  // Load books for the active genre in-place (below the fixed search bar).
+  useEffect(() => {
+    if (!activeGenre) {
+      setGenreBooks([]);
+      setIsGenreLoading(false);
+      setGenreError(null);
+      return;
+    }
+
+    let isMounted = true;
+    setIsGenreLoading(true);
+    setGenreError(null);
+
+    // Prefer books already in the local catalog when the genre id matches.
+    const local = allBooks.filter(
+      (b) => b.genre && b.genre.toLowerCase().includes(activeGenre.label.toLowerCase())
+    );
+
+    fetchLibriVoxCategory(activeGenre.query)
+      .then((books) => {
+        if (!isMounted) return;
+        const merged = [...local];
+        for (const b of books) {
+          if (!merged.some((x) => x.id === b.id)) merged.push(b);
+        }
+        setGenreBooks(merged);
+        setIsGenreLoading(false);
+        checkStatus(merged);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setGenreError('Could not load this genre. Check your connection and try again.');
+        setIsGenreLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeGenre, allBooks]);
+
+  const handleOpenGenre = (genreId: string) => {
+    const genre = LIBRIVOX_GENRES.find((g) => g.id === genreId) || null;
+    setActiveGenre(genre);
+  };
+
+  const handleCloseGenre = () => {
+    setActiveGenre(null);
+    setGenreBooks([]);
   };
 
   return (
-    <div id="search-view-container" className="w-full flex flex-col pb-24 text-[var(--text-main)]">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-serif-display italic font-bold text-[var(--text-main)] tracking-wide">
-          Search Catalog
-        </h1>
-      </div>
+    <div id="search-view-container" className="w-full h-full flex flex-col text-[var(--text-main)]">
+      {/* Fixed (non-scrolling) header: title + search bar + quick chips */}
+      <div id="search-header" className="shrink-0">
+        <div className="flex items-center justify-between mb-3">
+          <h1 className="text-xl font-serif-display italic font-bold text-[var(--text-main)] tracking-wide">
+            Search Catalog
+          </h1>
+        </div>
 
-      {/* Search Input Bar */}
-      <div id="search-input-wrapper" className="relative mb-3">
-        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--accent)]" />
-        <input
-          id="input-audiobook-search"
-          type="text"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') saveToHistory(searchTerm);
-          }}
-          placeholder="Search any title, author, or keyword (e.g. Dracula, Poe)..."
-          className="w-full pl-10 pr-9 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border-subtle)] focus:border-[var(--accent)] text-xs text-[var(--text-main)] placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[var(--accent)] transition-all"
-        />
+        {/* Search Input Bar */}
+        <div id="search-input-wrapper" className="relative mb-3">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--accent)]" />
+          <input
+            id="input-audiobook-search"
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') saveToHistory(searchTerm);
+            }}
+            placeholder="Search any title, author, or keyword (e.g. Dracula, Poe)..."
+            className="w-full pl-10 pr-9 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border-subtle)] focus:border-[var(--accent)] text-xs text-[var(--text-main)] placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-[var(--accent)] transition-all"
+          />
         {searchTerm && (
           <button
             id="btn-clear-search"
@@ -323,43 +383,148 @@ export const SearchView: React.FC<SearchViewProps> = ({
           </button>
         </div>
       )}
+      </div>{/* end fixed header */}
 
-      {/* Search Results */}
-      <div id="search-results-wrapper" className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10">
-        {isSearching ? (
+      {/* Scrollable Content: genre browser, genre books, or search results */}
+      <div id="search-results-wrapper" className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 pb-6">
+        {activeGenre ? (
+          <div id="genre-books-wrapper" className="flex flex-col pb-2">
+            <div className="flex items-center gap-2 mb-3">
+              <button
+                id="btn-back-from-genre"
+                onClick={handleCloseGenre}
+                className="shrink-0 w-8 h-8 rounded-full bg-[var(--surface)] hover:bg-[var(--surface-raised)] text-[var(--text-dim)] hover:text-[var(--accent)] flex items-center justify-center border border-[var(--border-subtle)] transition-colors"
+                title="Back to genres"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+              <div className="flex items-center gap-2 min-w-0">
+                {(() => {
+                  const Icon = GENRE_ICONS[activeGenre.iconName] || Compass;
+                  return <Icon className="w-4 h-4 text-[var(--accent)] shrink-0" />;
+                })()}
+                <h3 className="text-sm font-serif-display italic font-semibold text-[var(--text-main)] tracking-wide truncate">
+                  {activeGenre.label}
+                </h3>
+              </div>
+            </div>
+
+            {isGenreLoading ? (
+              <div className="flex flex-col items-center justify-center h-48 text-[var(--text-dim)]">
+                <div className="w-5 h-5 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin mb-2.5" />
+                <p className="text-xs font-serif-display italic">Loading {activeGenre.label} audiobooks...</p>
+              </div>
+            ) : genreError ? (
+              <div className="flex flex-col items-center justify-center py-12 text-[var(--text-dim)] text-center px-4 space-y-3">
+                <SearchX className="w-8 h-8 text-[var(--text-dim)]" />
+                <p className="text-xs font-serif-display italic max-w-[280px]">{genreError}</p>
+              </div>
+            ) : genreBooks.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-[var(--text-dim)] text-center px-4 space-y-3">
+                <LayoutGrid className="w-8 h-8 text-[var(--text-dim)]" />
+                <p className="text-xs font-serif-display italic">No books found in this genre.</p>
+              </div>
+            ) : (
+              <div id="genre-results-list" className="space-y-2">
+                <div className="flex items-center justify-between px-1">
+                  <p className="text-[10px] uppercase tracking-widest text-[var(--text-dim)] font-medium">{genreBooks.length} Works</p>
+                </div>
+                {genreBooks.map((book) => {
+                  const isDownloaded = !!downloadedStatusMap[book.id];
+                  const downloadProg = downloadProgressMap[book.id];
+                  return (
+                    <div
+                      key={book.id}
+                      id={`genre-result-${book.id}`}
+                      onClick={() => handleBookClick(book)}
+                      className="flex items-center gap-3 p-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border-subtle)] hover:border-[var(--accent)] hover:bg-[var(--surface-raised)] transition-all cursor-pointer group active:scale-[0.98]"
+                    >
+                      <div className="w-11 h-15 shrink-0 rounded-lg overflow-hidden bg-[var(--surface)] border border-[var(--border-subtle)] relative">
+                        <img
+                          src={book.coverImageUrl}
+                          alt={book.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src =
+                              'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&q=80&w=800';
+                          }}
+                        />
+                        {downloadProg !== undefined && (
+                          <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center">
+                            <div className="w-4 h-4 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-xs font-serif-display italic font-medium text-[var(--text-main)] truncate group-hover:text-[var(--accent)] transition-colors">
+                          {book.title}
+                        </h4>
+                        <p className="text-[11px] text-[var(--text-dim)] font-serif-display italic truncate mt-0.5">{book.author}</p>
+                        <div className="flex items-center gap-2 text-[10px] text-[var(--text-dim)] mt-1">
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-2.5 h-2.5 text-[var(--accent)]" />
+                            {Math.round(book.totalTimeSecs / 3600) || 1}h
+                          </span>
+                          <span>•</span>
+                          <span className="text-[var(--accent)] uppercase tracking-wider text-[9px]">{book.language}</span>
+                          <span>•</span>
+                          <span className="text-[var(--text-dim)] truncate">{book.tracks.length} track{book.tracks.length > 1 ? 's' : ''}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {onReadBook && (
+                          <button
+                            id={`btn-read-genre-${book.id}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onReadBook(book);
+                            }}
+                            className="w-8 h-8 rounded-full bg-[var(--surface-raised)] hover:bg-[var(--accent-dim)] text-[var(--text-dim)] hover:text-[var(--accent)] flex items-center justify-center transition-all border border-[var(--border-subtle)] hover:border-[var(--accent)]"
+                            title="Read Ebook Edition"
+                          >
+                            <BookOpen className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <button
+                          id={`btn-play-genre-${book.id}`}
+                          onClick={() => handleBookClick(book)}
+                          className="w-8 h-8 rounded-full bg-[var(--surface-raised)] group-hover:bg-[var(--accent)] text-[var(--text-dim)] group-hover:text-black flex items-center justify-center transition-all border border-[var(--border-subtle)] group-hover:border-[var(--accent)] group-hover:shadow-[0_0_12px_rgba(var(--accent-rgb),0.4)]"
+                          title="Open Book Details & Chapters"
+                        >
+                          <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : isSearching ? (
           <div className="flex flex-col items-center justify-center h-48 text-[var(--text-dim)]">
             <div className="w-5 h-5 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin mb-2.5" />
             <p className="text-xs font-serif-display italic">Searching LibriVox & Internet Archive catalogs...</p>
           </div>
-        ) : debouncedTerm.trim() === '' ? (
+        ) : debouncedTerm.trim() === '' && !activeGenre ? (
           <div id="search-empty-prompt" className="flex flex-col pb-6 text-[var(--text-dim)]">
-            <div className="flex flex-col items-center justify-center text-center pt-6 pb-8 px-4">
-              <div className="w-12 h-12 rounded-full bg-[var(--surface-raised)] border border-[var(--border-subtle)] flex items-center justify-center text-[var(--accent)] mb-3 shadow-lg">
-                <Sparkles className="w-5 h-5" />
-              </div>
-              <h3 className="text-sm font-serif-display italic font-medium text-[var(--text-main)]">Discover Timeless Audiobooks & Ebooks</h3>
-              <p className="text-xs text-[var(--text-dim)] mt-1 max-w-[280px] leading-relaxed">
-                Search the public domain collection or upload your own EPUB to read and listen offline.
-              </p>
-            </div>
-
             {/* Browse Genres (Spotify-style) */}
-            <div id="browse-genres-section" className="mt-2">
+            <div id="browse-genres-section" className="mt-1">
               <div className="flex items-center gap-2 mb-3">
                 <LayoutGrid className="w-4 h-4 text-[var(--accent)]" />
                 <h3 className="text-sm font-serif-display italic font-semibold text-[var(--text-main)] tracking-wide">
                   Browse Genres
                 </h3>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                 {LIBRIVOX_GENRES.map((genre) => {
                   const Icon = GENRE_ICONS[genre.iconName] || Compass;
                   return (
                     <button
                       key={genre.id}
                       id={`genre-tile-${genre.id}`}
-                      onClick={() => onOpenGenre && onOpenGenre(genre.id)}
-                      className="group flex items-center gap-3 p-3 rounded-xl bg-[var(--surface)] hover:bg-[var(--surface-raised)] border border-[var(--border-subtle)] hover:border-[var(--accent)] transition-all active:scale-[0.98] text-left cursor-pointer"
+                      onClick={() => handleOpenGenre(genre.id)}
+                      className="group flex items-center gap-3 p-3.5 rounded-xl bg-[var(--surface)] hover:bg-[var(--surface-raised)] border border-[var(--border-subtle)] hover:border-[var(--accent)] transition-all active:scale-[0.98] text-left cursor-pointer"
                     >
                       <div className="w-10 h-10 shrink-0 rounded-xl bg-gradient-to-br from-[var(--accent-dim)] to-[var(--surface-raised)] border border-[var(--border-subtle)] flex items-center justify-center text-[var(--accent)] group-hover:from-[var(--accent)] group-hover:to-[var(--accent)] group-hover:text-black transition-all">
                         <Icon className="w-5 h-5" />
@@ -401,7 +566,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
                   key={book.id}
                   id={`search-result-${book.id}`}
                   onClick={() => handleBookClick(book)}
-                  className="flex items-center gap-3 p-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border-subtle)] hover:border-[var(--accent)] hover:bg-[var(--surface-raised)] transition-all cursor-pointer group"
+                  className="flex items-center gap-3 p-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border-subtle)] hover:border-[var(--accent)] hover:bg-[var(--surface-raised)] transition-all cursor-pointer group active:scale-[0.98]"
                 >
                   <div className="w-11 h-15 shrink-0 rounded-lg overflow-hidden bg-[var(--surface)] border border-[var(--border-subtle)] relative">
                     <img

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   User,
   Settings,
@@ -54,6 +54,8 @@ import {
   FONT_OPTIONS,
   AppFontConfig,
 } from '../utils/fontManager';
+import { ColorPickerPanel } from './ColorPickerPanel';
+import { PALETTE_PRESETS } from '../utils/colorPickerUtils';
 
 interface SettingsViewProps {
   onUploadEpub?: () => void;
@@ -82,6 +84,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onUploadEpub }) => {
   const [customColors, setCustomColors] = useState<CustomThemeInput>(getSavedCustomTheme());
   const [customSavedNote, setCustomSavedNote] = useState(false);
   const [isCustomEditorOpen, setIsCustomEditorOpen] = useState(false);
+  const [editingColorField, setEditingColorField] = useState<keyof CustomThemeInput | null>(null);
 
   // Font customization state
   const [fontConfig, setFontConfig] = useState<AppFontConfig>(getSavedFontConfig());
@@ -356,41 +359,100 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onUploadEpub }) => {
                     )}
                   </div>
                   <p className="text-[11px] text-[var(--text-dim)] leading-relaxed">
-                    Pick your own palette. Changes preview instantly across the app,
-                    including the full-screen player and menus.
+                    Start from a curated palette or pick your own colors. Tap any swatch to open the full color editor.
                   </p>
 
-                  {(
-                    [
-                      { key: 'bg', label: 'Background', hint: 'Base app & player backdrop' },
-                      { key: 'surface', label: 'Panels', hint: 'Cards, menus & raised surfaces' },
-                      { key: 'accent', label: 'Accent', hint: 'Buttons, highlights & icons' },
-                      { key: 'textMain', label: 'Text', hint: 'Primary text color' },
-                    ] as { key: keyof CustomThemeInput; label: string; hint: string }[]
-                  ).map((f) => (
-                    <div key={f.key} className="flex items-center gap-3">
-                      <label className="relative w-11 h-11 rounded-xl overflow-hidden border border-[var(--border-subtle)] shrink-0 cursor-pointer">
-                        <input
-                          type="color"
-                          value={customColors[f.key]}
-                          onChange={(e) => handleUpdateCustomColor(f.key, e.target.value)}
-                          className="absolute inset-0 w-full h-full cursor-pointer opacity-0"
-                          aria-label={`${f.label} color`}
-                        />
-                        <span
-                          className="absolute inset-0"
-                          style={{ backgroundColor: customColors[f.key] }}
-                        />
-                      </label>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-medium text-[var(--text-main)]">{f.label}</div>
-                        <div className="text-[10px] text-[var(--text-dim)] truncate">{f.hint}</div>
-                      </div>
-                      <span className="font-mono text-[10px] text-[var(--text-dim)] uppercase">
-                        {customColors[f.key]}
-                      </span>
+                  {/* Palette Presets — scrollable row */}
+                  <div>
+                    <div className="text-[10px] font-bold text-[var(--text-dim)] uppercase tracking-wider mb-2">
+                      Quick Palettes
                     </div>
-                  ))}
+                    <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-thin">
+                      {PALETTE_PRESETS.map((p) => {
+                        const isActive =
+                          customColors.bg === p.bg &&
+                          customColors.surface === p.surface &&
+                          customColors.accent === p.accent &&
+                          customColors.textMain === p.textMain;
+                        return (
+                          <button
+                            key={p.id}
+                            onClick={() => {
+                              const next = { bg: p.bg, surface: p.surface, accent: p.accent, textMain: p.textMain };
+                              setCustomColors(next);
+                              previewCustomTheme(next);
+                              setEditingColorField(null);
+                            }}
+                            className={`shrink-0 w-[72px] rounded-xl border transition-all duration-200 p-1.5 flex flex-col items-center gap-1 ${
+                              isActive
+                                ? 'border-[var(--accent)] bg-[var(--accent-dim)] shadow-md'
+                                : 'border-[var(--border-subtle)] hover:border-[var(--accent)] bg-[var(--surface)]'
+                            }`}
+                          >
+                            <div className="flex gap-0.5">
+                              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: p.bg }} />
+                              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: p.surface }} />
+                            </div>
+                            <div className="flex gap-0.5">
+                              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: p.accent }} />
+                              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: p.textMain }} />
+                            </div>
+                            <span className="text-[8px] text-[var(--text-dim)] leading-tight text-center truncate w-full">
+                              {p.name}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Individual color fields with HSB picker */}
+                  <div className="space-y-2">
+                    <div className="text-[10px] font-bold text-[var(--text-dim)] uppercase tracking-wider">
+                      Fine-Tune Colors
+                    </div>
+                    {(
+                      [
+                        { key: 'bg', label: 'Background', hint: 'Base app & player backdrop' },
+                        { key: 'surface', label: 'Panels', hint: 'Cards, menus & raised surfaces' },
+                        { key: 'accent', label: 'Accent', hint: 'Buttons, highlights & icons' },
+                        { key: 'textMain', label: 'Text', hint: 'Primary text color' },
+                      ] as { key: keyof CustomThemeInput; label: string; hint: string }[]
+                    ).map((f) => {
+                      const isOpen = editingColorField === f.key;
+                      return (
+                        <div key={f.key}>
+                          <button
+                            onClick={() => {
+                              setEditingColorField(isOpen ? null : f.key);
+                            }}
+                            className="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-[var(--surface-raised)] transition-colors text-left"
+                          >
+                            <div
+                              className="w-10 h-10 rounded-xl border border-[var(--border-subtle)] shrink-0 shadow-inner"
+                              style={{ backgroundColor: customColors[f.key] }}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs font-medium text-[var(--text-main)]">{f.label}</div>
+                              <div className="text-[10px] text-[var(--text-dim)] truncate">{f.hint}</div>
+                            </div>
+                            <span className="font-mono text-[10px] text-[var(--text-dim)] uppercase">
+                              {customColors[f.key]}
+                            </span>
+                            <ChevronDown className={`w-3.5 h-3.5 text-[var(--text-dim)] transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+                          </button>
+                          {isOpen && (
+                            <div className="pl-2 pr-1 pb-2">
+                              <ColorPickerPanel
+                                color={customColors[f.key]}
+                                onChange={(hex) => handleUpdateCustomColor(f.key, hex)}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
 
                   {/* Live preview (uses applied CSS vars so it matches current preview) */}
                   <div
@@ -423,6 +485,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onUploadEpub }) => {
                       onClick={() => {
                         const fallback: ThemeId = getSavedTheme() !== 'custom' ? getSavedTheme() : 'midnight-gold';
                         handleSelectTheme(fallback);
+                        setEditingColorField(null);
                       }}
                       className="px-4 py-2.5 rounded-xl border border-[var(--border-subtle)] text-xs font-semibold text-[var(--text-dim)] hover:text-[var(--text-main)] transition-all"
                     >

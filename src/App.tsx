@@ -708,7 +708,14 @@ export default function App() {
 
       {/* Main Content Viewport */}
       <main className="flex-1 relative overflow-hidden bg-[var(--bg)] flex flex-col">
-        <div className="flex-1 overflow-y-auto pt-[max(env(safe-area-inset-top),1.5rem)] pb-36">
+        <div
+          key={activeTab}
+          className={`flex-1 ${
+            activeTab === 'search'
+              ? 'overflow-hidden pt-[max(env(safe-area-inset-top),1.5rem)] flex flex-col'
+              : 'overflow-y-auto pt-[max(env(safe-area-inset-top),1.5rem)] pb-36'
+          }`}
+        >
           {isLoadingFeed ? (
             <Skeleton />
           ) : (
@@ -728,7 +735,7 @@ export default function App() {
                 </div>
               )}
               {activeTab === 'search' && (
-                <div className="max-w-5xl mx-auto w-full p-4 md:p-8">
+                <div className="max-w-5xl mx-auto w-full h-full flex flex-col px-4 md:px-8 pt-4 md:pt-8">
                   <SearchView
                     allBooks={catalog}
                     onSelectBook={handleOpenBookDetails}
@@ -979,11 +986,8 @@ export default function App() {
           setShowOfflineManagerModal(false);
           getAllOfflineBooks().then(setOfflineBooks);
         }}
-        catalog={catalog}
         isOfflineOnly={playerState.isOfflineOnly}
         onToggleOfflineOnly={() => setPlayerState((prev) => ({ ...prev, isOfflineOnly: !prev.isOfflineOnly }))}
-        onSelectBook={handleOpenBookDetails}
-        onReadBook={handleOpenEbookReader}
       />
 
       {/* Book Details & Information Modal */}

@@ -167,9 +167,10 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     }
   };
 
-  const handleBookClick = async (book: Audiobook) => {
-    const fullyResolved = await resolveFullTracklist(book);
-    onSelectBook(fullyResolved);
+  const handleBookClick = (book: Audiobook) => {
+    // Open the book page immediately; BookDetailModal resolves the full
+    // tracklist itself and shows its skeleton while loading.
+    onSelectBook(book);
   };
 
   return (
@@ -297,7 +298,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               <div
                 key={`jump-${book.id}`}
                 onClick={() => handleBookClick(book)}
-                className="flex items-center gap-3 p-3 rounded-xl bg-[var(--surface)] hover:bg-[var(--surface)] border border-[var(--border-subtle)] hover:border-[var(--accent)] transition-all cursor-pointer group shadow-md"
+                className="flex items-center gap-3 p-3 rounded-xl bg-[var(--surface)] hover:bg-[var(--surface)] border border-[var(--border-subtle)] hover:border-[var(--accent)] transition-all cursor-pointer group shadow-md active:scale-[0.98]"
               >
                 <div className="w-12 h-16 shrink-0 rounded-lg overflow-hidden bg-[var(--surface)] border border-[var(--border-subtle)]">
                   <img
@@ -445,7 +446,7 @@ const HorizontalBookShelf: React.FC<HorizontalShelfProps> = ({
               key={book.id}
               id={`shelf-book-${book.id}`}
               onClick={() => onSelectBook(book)}
-              className="group w-40 sm:w-44 shrink-0 snap-start flex flex-col bg-[var(--surface)] rounded-2xl border border-[var(--border-subtle)] p-3 hover:border-[var(--accent)] hover:bg-[var(--surface-raised)] transition-all duration-200 cursor-pointer shadow-md"
+              className="group w-40 sm:w-44 shrink-0 snap-start flex flex-col bg-[var(--surface)] rounded-2xl border border-[var(--border-subtle)] p-3 hover:border-[var(--accent)] hover:bg-[var(--surface-raised)] transition-all duration-200 cursor-pointer shadow-md active:scale-[0.96]"
             >
               <div className="relative aspect-[3/4] w-full rounded-xl overflow-hidden mb-2.5 bg-[var(--surface-raised)] border border-[var(--border-subtle)]">
                 <img

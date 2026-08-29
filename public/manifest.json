@@ -1,6 +1,6 @@
 {
-  "name": "LibriAudio — Audiobooks & EPUB Reader",
-  "short_name": "LibriAudio",
+  "name": "LibreAudio — Audiobooks & EPUB Reader",
+  "short_name": "LibreAudio",
   "description": "Public domain audiobooks player and EPUB reader",
   "start_url": "/",
   "display": "fullscreen",

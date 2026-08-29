@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Audiobook } from '../types';
 import { X, Play, BookOpen, Clock, Sparkles } from 'lucide-react';
-import { GenreCategory, fetchLibriVoxCategory, resolveFullTracklist } from '../utils/librivoxRecommendations';
+import { GenreCategory, fetchLibriVoxCategory } from '../utils/librivoxRecommendations';
 
 interface GenreViewProps {
   genre: GenreCategory | null;
@@ -63,9 +63,10 @@ export const GenreView: React.FC<GenreViewProps> = ({
 
   if (!open || !genre) return null;
 
-  const handleBookClick = async (book: Audiobook) => {
-    const resolved = await resolveFullTracklist(book);
-    onSelectBook(resolved);
+  const handleBookClick = (book: Audiobook) => {
+    // Open the book page immediately; BookDetailModal resolves the full
+    // tracklist itself and shows its skeleton while loading.
+    onSelectBook(book);
   };
 
   return (
@@ -138,7 +139,7 @@ export const GenreView: React.FC<GenreViewProps> = ({
                 key={book.id}
                 id={`genre-book-${book.id}`}
                 onClick={() => handleBookClick(book)}
-                className="group flex flex-col bg-[var(--surface)] rounded-2xl border border-[var(--border-subtle)] p-3 hover:border-[var(--accent)] hover:bg-[var(--surface-raised)] transition-all duration-200 cursor-pointer shadow-md"
+                className="group flex flex-col bg-[var(--surface)] rounded-2xl border border-[var(--border-subtle)] p-3 hover:border-[var(--accent)] hover:bg-[var(--surface-raised)] transition-all duration-200 cursor-pointer shadow-md active:scale-[0.97]"
               >
                 <div className="relative aspect-[3/4] w-full rounded-xl overflow-hidden mb-2.5 bg-[var(--surface-raised)] border border-[var(--border-subtle)]">
                   <img

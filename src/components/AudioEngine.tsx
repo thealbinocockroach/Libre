@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import { PlayerState } from '../types';
-import { getOfflineAudioTrackUrl } from '../utils/offlineStorage';
+import { getPlayableAudioUrl } from '../utils/offlineStorage';
 import AudioPlaybackNative, { AudioPlaybackEvent } from '../utils/audioPlaybackNative';
 import { httpGetBlob } from '../utils/httpClient';
 
@@ -122,7 +122,12 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
 
       if (book) {
         try {
-          const offlineUrl = await getOfflineAudioTrackUrl(book.id, track!.id, track!.trackNumber);
+          const offlineUrl = await getPlayableAudioUrl(
+            book.id,
+            track!.id,
+            track!.audioUrl,
+            track!.trackNumber,
+          );
           if (offlineUrl && isSubscribed) {
             finalUrl = offlineUrl;
           }
@@ -274,11 +279,18 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
 
       if (book) {
         try {
-          const offlineUrl = await getOfflineAudioTrackUrl(book.id, track!.id, track!.trackNumber);
+          const offlineUrl = await getPlayableAudioUrl(
+            book.id,
+            track!.id,
+            track!.audioUrl,
+            track!.trackNumber,
+          );
           if (offlineUrl && isSubscribed) {
             finalUrl = offlineUrl;
-            blobUrlRef.current = offlineUrl;
-          } else if (offlineUrl) {
+            if (offlineUrl.startsWith('blob:')) {
+              blobUrlRef.current = offlineUrl;
+            }
+          } else if (offlineUrl?.startsWith('blob:')) {
             URL.revokeObjectURL(offlineUrl);
           }
         } catch {}
