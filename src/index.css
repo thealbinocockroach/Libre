@@ -194,3 +194,37 @@ article.prose figcaption {
 #reader-content-scroll .libriaudio-sel-hold *::selection {
   background: rgba(197, 160, 89, 0.5) !important;
 }
+
+/* Custom (Moon+ style) selection overlay — drawn entirely in JS, independent of
+   the WebView's native selection. */
+.libriaudio-active-sel {
+  position: absolute;
+  background: rgba(197, 160, 89, 0.4);
+  border-radius: 2px;
+  display: block;
+}
+
+.libriaudio-sel-handle {
+  position: fixed;
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 2px solid #c5a059;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  z-index: 9999;
+  cursor: pointer;
+  touch-action: none;
+  pointer-events: auto;
+}
+.libriaudio-sel-handle::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  transform: translate(-50%, -50%);
+  border-radius: 9999px;
+  background: #c5a059;
+}

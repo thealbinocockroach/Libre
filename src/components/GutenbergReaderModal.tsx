@@ -158,6 +158,16 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     text: string;
   } | null>(null);
 
+  // Custom (Moon+ style) selection: highlight paint boxes (content coords) and
+  // draggable handle positions (viewport coords).
+  const [activeSelBoxes, setActiveSelBoxes] = useState<
+    { top: number; left: number; width: number; height: number }[]
+  >([]);
+  const [handlePos, setHandlePos] = useState<{
+    start: { x: number; y: number };
+    end: { x: number; y: number };
+  } | null>(null);
+
   // Add / Edit Note Dialog
   const [noteDialog, setNoteDialog] = useState<{
     isOpen: boolean;
@@ -188,24 +198,28 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const contentContainerRef = useRef<HTMLDivElement>(null);
+  const contentWrapperRef = useRef<HTMLDivElement>(null);
   const articleRef = useRef<HTMLElement>(null);
   const sessionStartRef = useRef<number>(Date.now());
   const sessionSecondsRef = useRef<number>(0);
   const lastFlushedSecondsRef = useRef<number>(0);
   const targetScrollPercentageRef = useRef<number>(0);
   const isRestoringPositionRef = useRef<boolean>(false);
-  const selectionTimerRef = useRef<number | null>(null);
-  const preservedRangeRef = useRef<Range | null>(null);
-  const restoringSelectionRef = useRef(false);
-  const selectionHoldRef = useRef<{ text: string; x: number; y: number } | null>(null);
-  const selectionMenuVisibleRef = useRef(false);
-  const selectionMenuShownAtRef = useRef(0);
-  const SELECTION_DEBOUNCE_MS = 120;
-  // Stable ref to the latest selection handler so the document-level
-  // `selectionchange` listener does not need to re-subscribe (and cancel its
-  // pending timer) on every render. This is critical on touch/Android where the
-  // per-second session timer would otherwise clear the menu-show timeout.
-  const handleTextSelectionRef = useRef<() => void>(() => {});
+  // Selection refs ----------
+  // Overlay DOM refs (the active-selection layer + handles). Never part of the
+  // article's own HTML, so committed highlights / search marks are unaffected.
+  const selectionLayerRef = useRef<HTMLDivElement | null>(null);
+  const selStartHandleRef = useRef<HTMLDivElement | null>(null);
+  const selEndHandleRef = useRef<HTMLDivElement | null>(null);
+  // Logical active selection (character offsets into a flat text index).
+  const selectionLockRef = useRef(false);
+  const selStartCharRef = useRef<number>(-1);
+  const selEndCharRef = useRef<number>(-1);
+  // While true, a long-press is arming (before the gesture fires). Guarded with
+  // a timestamp so pointer-up handlers don't misfire during the hold.
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressArmedRef = useRef(false);
+  const dragHandleRef = useRef<'start' | 'end' | null>(null);
 
   // Sync currentBook when prop changes and restore saved reading position
   useEffect(() => {
@@ -234,8 +248,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
 
   // Load Annotations & Bookmarks from localStorage
   useEffect(() => {
-    if (!currentBook.id) return;
-    try {
+    if (!currentBook.id) return;    try {
       const savedAnn = localStorage.getItem(`libriaudio_ann_${currentBook.id}`);
       if (savedAnn) setAnnotations(JSON.parse(savedAnn));
       else setAnnotations([]);
@@ -248,53 +261,264 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     }
   }, [currentBook.id]);
 
-  // Robust text-selection detection (covers mouse + touch + Android WebView)
-  useEffect(() => {
-    handleTextSelectionRef.current = handleTextSelection;
-  });
-  useEffect(() => {
-    selectionMenuVisibleRef.current = !!(selectionMenu && selectionMenu.visible);
-  }, [selectionMenu]);
+  // Stable refs to the latest gesture/selection handlers so the document-level
+  // listeners below do not need to re-subscribe (and drop state) on each render.
+  const onLongPressRef = useRef<(x: number, y: number) => void>(() => {});
+  const onDragMoveRef = useRef<((clientX: number, clientY: number) => void) | null>(null);
+  const onDragEndRef = useRef<() => void>(() => {});
+  const onDismissTapRef = useRef<(e: PointerEvent) => void>(() => {});
+  // Mirror of activeSelBoxes for use inside the non-rendering dismiss handler.
+  const activeSelBoxesRef = useRef<{ top: number; left: number; width: number; height: number }[]>(
+    []
+  );
+
+  // Character-offset index over the rendered article text. Built once per
+  // chapter/annotation pass so hit-testing and selection can work purely in JS
+  // (no reliance on the WebView's native selection).
+  const charIndexRef = useRef<{ text: string; startChar: Map<Text, number>; nodes: Text[] } | null>(
+    null
+  );
+
+  const rebuildCharIndex = () => {
+    const article = articleRef.current;
+    charIndexRef.current = null;
+    if (!article) return;
+    const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT, null);
+    const nodes: Text[] = [];
+    const startChar = new Map<Text, number>();
+    let acc = '';
+    let node: Node | null;
+    while ((node = walker.nextNode())) {
+      const t = node as Text;
+      const v = t.nodeValue || '';
+      if (!v) continue;
+      // Mirror the highlight renderer's traversal: skip text inside marks /
+      // interactive / hidden elements so the character offsets match the
+      // renderer's own flat text exactly (otherwise highlights misalign once a
+      // previous highlight has been committed).
+      const parent = t.parentElement;
+      if (
+        parent &&
+        ['mark', 'script', 'style', 'button', 'noscript'].includes(parent.tagName.toLowerCase())
+      ) {
+        continue;
+      }
+      startChar.set(t, acc.length);
+      acc += v;
+      nodes.push(t);
+    }
+    charIndexRef.current = { text: acc, startChar, nodes };
+  };
+
+  // Long-press gesture: tap-and-hold on body text starts a custom selection.
+  // Also handles double-tap (word) and triple-tap (paragraph) for Moon+-like UX.
   useEffect(() => {
     if (!isOpen) return;
+    const el = contentContainerRef.current;
+    if (!el) return;
 
-    const handler = () => {
-      if (restoringSelectionRef.current) return;
-      const selection = window.getSelection();
-      const active = document.activeElement as HTMLElement | null;
-      if (active?.closest?.('#reader-floating-selection-menu')) return;
-
-      // Non-collapsed: capture immediately so Android WebView doesn't miss the window
-      if (selection && !selection.isCollapsed) {
-        if (selectionTimerRef.current) window.clearTimeout(selectionTimerRef.current);
-        handleTextSelectionRef.current();
-        return;
+    const cancelLongPress = () => {
+      if (longPressTimerRef.current) {
+        window.clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
       }
-
-      // Collapsed after a selection: keep toolbar visible for the hold period
-      if (selectionHoldRef.current || selectionMenuVisibleRef.current) {
-        if (selectionHoldRef.current) {
-          restorePreservedSelection();
-          setSelectionMenu({
-            visible: true,
-            ...selectionHoldRef.current,
-          });
-        }
-        return;
-      }
-
-      if (selectionTimerRef.current) window.clearTimeout(selectionTimerRef.current);
-      selectionTimerRef.current = window.setTimeout(() => {
-        setSelectionMenu(null);
-      }, SELECTION_DEBOUNCE_MS);
+      longPressArmedRef.current = false;
     };
 
-    document.addEventListener('selectionchange', handler);
+    let tapCount = 0;
+    let lastTapTime = 0;
+    let lastTapClientX = 0;
+    let lastTapClientY = 0;
+
+    // Pointer Events only (Android WebView fully supports them). Registering
+    // BOTH pointer and touch caused every gesture to fire twice, so `onUp` ran
+    // back-to-back and the double-tap word-selection branch fired on every
+    // release. Using pointer events alone makes long-press -> drag -> release
+    // deterministic.
+    const onDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('#reader-floating-selection-menu')) return;
+      if (target.closest('.libriaudio-sel-handle')) return;
+      if (selectionLockRef.current) return;
+      cancelLongPress();
+      longPressArmedRef.current = true;
+      longPressTimerRef.current = window.setTimeout(() => {
+        longPressTimerRef.current = null;
+        longPressArmedRef.current = false;
+        onLongPressRef.current(e.clientX, e.clientY);
+      }, 450);
+    };
+
+    const onUp = (e: PointerEvent) => {
+      const now = Date.now();
+      const target = e.target as HTMLElement;
+      if (target.closest('#reader-floating-selection-menu')) {
+        cancelLongPress();
+        return;
+      }
+      if (target.closest('.libriaudio-sel-handle')) {
+        cancelLongPress();
+        return;
+      }
+
+      const clientX = e.clientX;
+      const clientY = e.clientY;
+      const dx = Math.abs(clientX - lastTapClientX);
+      const dy = Math.abs(clientY - lastTapClientY);
+      const sameSpot = dx < 8 && dy < 8;
+
+      if (sameSpot && now - lastTapTime < 300) {
+        tapCount++;
+      } else {
+        tapCount = 1;
+      }
+      lastTapTime = now;
+      lastTapClientX = clientX;
+      lastTapClientY = clientY;
+
+      if (tapCount === 2) {
+        cancelLongPress();
+        const idx = charIndexRef.current;
+        if (idx) {
+          const c = charAtPoint(clientX, clientY);
+          if (c >= 0) {
+            window.getSelection()?.removeAllRanges();
+            const [ws, we] = expandToWord(idx.text, c);
+            selStartCharRef.current = ws;
+            selEndCharRef.current = we;
+            selectionLockRef.current = true;
+            dragHandleRef.current = null;
+            recomputeSelection();
+            tapCount = 0;
+          }
+        }
+      } else if (tapCount === 3) {
+        cancelLongPress();
+        const idx = charIndexRef.current;
+        if (idx) {
+          const c = charAtPoint(clientX, clientY);
+          if (c >= 0) {
+            window.getSelection()?.removeAllRanges();
+            const { node } = nodeAndOffset(c);
+            if (node) {
+              let paraNode = node;
+              while (paraNode.parentElement && !isBlockElement(paraNode.parentElement)) {
+                paraNode = paraNode.parentElement.firstChild as Node;
+              }
+              const range = document.createRange();
+              range.selectNodeContents(paraNode.parentElement || node.parentElement!);
+              const text = range.toString();
+              const startChar = idx.startChar.get(node) || 0;
+              const endChar = startChar + text.length;
+              selStartCharRef.current = startChar;
+              selEndCharRef.current = endChar;
+              selectionLockRef.current = true;
+              dragHandleRef.current = null;
+              recomputeSelection();
+            }
+            tapCount = 0;
+          }
+        }
+      }
+
+      cancelLongPress();
+    };
+
+    const onCancel = () => cancelLongPress();
+    const onLeave = () => cancelLongPress();
+
+    // Pointer Events only (see note above; touch listeners removed to avoid
+    // double-firing every gesture).
+    el.addEventListener('pointerdown', onDown, { passive: true });
+    el.addEventListener('pointerup', onUp, { passive: true });
+    el.addEventListener('pointercancel', onCancel, { passive: true });
+    el.addEventListener('pointerleave', onLeave, { passive: true });
     return () => {
-      document.removeEventListener('selectionchange', handler);
-      if (selectionTimerRef.current) window.clearTimeout(selectionTimerRef.current);
+      cancelLongPress();
+      el.removeEventListener('pointerdown', onDown);
+      el.removeEventListener('pointerup', onUp);
+      el.removeEventListener('pointercancel', onCancel);
+      el.removeEventListener('pointerleave', onLeave);
     };
   }, [isOpen]);
+
+  // Helper to detect block-level elements for paragraph selection
+  const isBlockElement = (el: Element): boolean => {
+    const tag = el.tagName.toLowerCase();
+    return ['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'blockquote', 'pre', 'section', 'article'].includes(tag);
+  };
+
+  // Keep a ref mirror of the active overlay boxes for the non-rendering
+  // dismiss-tap handler.
+  useEffect(() => {
+    activeSelBoxesRef.current = activeSelBoxes;
+  }, [activeSelBoxes]);
+
+  // Handle drag: while a handle is being dragged, track pointer on the window
+  // so the drag isn't lost if the finger leaves the handle element.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onMove = (e: PointerEvent) => {
+      if (dragHandleRef.current && onDragMoveRef.current) {
+        onDragMoveRef.current(e.clientX, e.clientY);
+      }
+    };
+    const onUp = () => {
+      if (dragHandleRef.current && onDragEndRef.current) {
+        onDragEndRef.current();
+      }
+    };
+    window.addEventListener('pointermove', onMove, { passive: true });
+    window.addEventListener('pointerup', onUp, { passive: true });
+    window.addEventListener('pointercancel', onUp, { passive: true });
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, [isOpen]);
+
+  // Update selection overlay (handles + toolbar) on scroll so they stay
+  // aligned with the selected text. Throttled to avoid excessive recomputes.
+  useEffect(() => {
+    if (!isOpen) return;
+    const el = contentContainerRef.current;
+    if (!el) return;
+    let ticking = false;
+    const onScroll = () => {
+      if (!selectionLockRef.current) return;
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        ticking = false;
+        recomputeSelection();
+      });
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [isOpen]);
+
+  // Dismiss the locked selection when tapping anywhere outside of it / the
+  // toolbar / the handles (Moon+ style: selection stays until you touch elsewhere).
+  useEffect(() => {
+    if (!isOpen) return;
+    const el = contentContainerRef.current;
+    if (!el) return;
+    const onDown = (e: PointerEvent | TouchEvent) => onDismissTapRef.current(e);
+    el.addEventListener('pointerdown', onDown, { passive: true });
+    el.addEventListener('touchstart', onDown, { passive: true });
+    return () => {
+      el.removeEventListener('pointerdown', onDown);
+      el.removeEventListener('touchstart', onDown);
+    };
+  }, [isOpen]);
+
+  // Clear the custom selection when the chapter or a layout-affecting setting
+  // changes (the overlay coords would otherwise become stale / misaligned).
+  useEffect(() => {
+    if (!isOpen) return;
+    if (selectionLockRef.current) clearSelectionState();
+  }, [isOpen, currentChapterIndex, settings.fontSize, settings.lineHeight, settings.columnWidth, settings.fontFamily]);
 
   // Keep annotations in sync with edits/deletes made in the global BookNotesModal
   useEffect(() => {
@@ -615,146 +839,497 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     updateEbookReadingPosition(currentBook.id, currentChapterIndex, progress);
     updateCachedPosition(currentBook.id, currentChapterIndex, progress);
 
-    // Dismiss floating selection on active scroll
-    if (selectionMenu) {
-      setSelectionMenu(null);
-      selectionHoldRef.current = null;
-      selectionMenuVisibleRef.current = false;
-      preservedRangeRef.current = null;
-    }
+    // Keep the custom selection alive on scroll and let the rAF recompute
+    // effect re-aim the handles/toolbar at the selected text (Moon+ style),
+    // so minor finger-drift during a long-press can't wipe a fresh selection.
     if (activeHighlightPopup) setActiveHighlightPopup(null);
   };
 
-  // Text selection detection
-  function restorePreservedSelection() {
-    const range = preservedRangeRef.current;
+  // ── Custom (Moon+ style) selection: drawn in JS, never uses the WebView's
+  //    native selection. The visible highlight + draggable handles are our own
+  //    overlay; the whole thing persists until dismissed. ──────────────────
+  // Return the text node + offset for a global character index (binary search).
+  const nodeAndOffset = (char: number) => {
+    const idx = charIndexRef.current;
+    if (!idx) return { node: null as Text | null, offset: 0 };
+    const arr = idx.nodes;
+    if (arr.length === 0) return { node: null as Text | null, offset: 0 };
+    let lo = 0;
+    let hi = arr.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (idx.startChar.get(arr[mid])! > char) hi = mid;
+      else lo = mid + 1;
+    }
+    const node = arr[Math.max(0, lo - 1)];
+    const base = idx.startChar.get(node)!;
+    const len = (node.nodeValue || '').length;
+    const offset = Math.max(0, Math.min(len, char - base));
+    return { node, offset };
+  };
+
+  // Build a DOM Range from two global character indices.
+  const rangeFromChars = (start: number, end: number): Range | null => {
+    const a = Math.min(start, end);
+    const b = Math.max(start, end);
+    const { node: aNode, offset: aOff } = nodeAndOffset(a);
+    const { node: bNode, offset: bOff } = nodeAndOffset(b);
+    if (!aNode || !bNode) return null;
+    try {
+      const r = document.createRange();
+      r.setStart(aNode, aOff);
+      r.setEnd(bNode, bOff);
+      return r;
+    } catch {
+      return null;
+    }
+  };
+
+  // Caret rect (viewport coords) at a specific character boundary.
+  const caretRectAt = (char: number): DOMRect | null => {
+    const { node, offset } = nodeAndOffset(char);
+    if (!node) return null;
+    try {
+      const r = document.createRange();
+      r.setStart(node, offset);
+      r.setEnd(node, offset);
+      const rect = r.getBoundingClientRect();
+      r.detach?.();
+      return rect;
+    } catch {
+      return null;
+    }
+  };
+
+  // Hit-test a viewport point to a global character index.
+  // Optimized: binary search within the line's text nodes for O(log n) instead of O(n).
+  const charAtPoint = (clientX: number, clientY: number): number => {
+    const idx = charIndexRef.current;
+    if (!idx) return -1;
+    let best = -1;
+    let bestDist = Infinity;
+
+    // First pass: find candidate text nodes whose line boxes contain the Y coordinate
+    const candidates: { node: Text; start: number; rects: DOMRect[] }[] = [];
+    for (const node of idx.nodes) {
+      const text = node.nodeValue || '';
+      if (!text) continue;
+      const full = document.createRange();
+      full.selectNodeContents(node);
+      const rects: DOMRect[] = [];
+      for (const r of full.getClientRects()) {
+        if (r.width === 0 && r.height === 0) continue;
+        if (clientY >= r.top - 8 && clientY <= r.bottom + 8) {
+          rects.push(r);
+        }
+      }
+      full.detach?.();
+      if (rects.length > 0) {
+        candidates.push({ node, start: idx.startChar.get(node)!, rects });
+      }
+    }
+
+    if (candidates.length === 0) return -1;
+
+    // For each candidate, binary search the character position
+    for (const { node, start, rects } of candidates) {
+      const text = node.nodeValue || '';
+      const len = text.length;
+      if (len === 0) continue;
+
+      let lo = 0;
+      let hi = len;
+      let localBest = 0;
+      let localBestDist = Infinity;
+
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        const r = document.createRange();
+        r.setStart(node, mid);
+        r.setEnd(node, mid);
+        const rect = r.getBoundingClientRect();
+        r.detach?.();
+        const dist = Math.hypot(clientX - rect.left, clientY - rect.top);
+        if (dist < localBestDist) {
+          localBestDist = dist;
+          localBest = mid;
+        }
+        // Determine search direction by comparing X
+        if (clientX < rect.left) {
+          hi = mid - 1;
+        } else {
+          lo = mid + 1;
+        }
+      }
+
+      // Fine-tune: check neighbors of binary search result
+      const checkRange = Math.min(3, len);
+      for (let i = Math.max(0, localBest - checkRange); i <= Math.min(len, localBest + checkRange); i++) {
+        const r = document.createRange();
+        r.setStart(node, i);
+        r.setEnd(node, i);
+        const rect = r.getBoundingClientRect();
+        r.detach?.();
+        const dist = Math.hypot(clientX - rect.left, clientY - rect.top);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = start + i;
+        }
+      }
+      if (bestDist < 3) break; // tight match found
+    }
+
+    if (best === -1) {
+      // Fallback: the tap landed on a line entirely covered by `<mark>`
+      // (existing highlights / search matches) which the unmarked index skips.
+      // Find the tapped caret over ALL text nodes, then return the nearest
+      // unmarked offset so a new selection can still start there.
+      const article = articleRef.current;
+      if (article) {
+        const w = document.createTreeWalker(article, NodeFilter.SHOW_TEXT, null);
+        const allNodes: Text[] = [];
+        let n: Node | null;
+        while ((n = w.nextNode())) {
+          const t = n as Text;
+          if ((t.nodeValue || '').length) allNodes.push(t);
+        }
+        let unmarkedSoFar = 0;
+        let fallbackOffset = -1;
+        let fallbackBestDist = Infinity;
+        for (const t of allNodes) {
+          const v = t.nodeValue || '';
+          const parent = t.parentElement;
+          const inMark =
+            !!parent && parent.tagName.toLowerCase() === 'mark';
+          const full = document.createRange();
+          full.selectNodeContents(t);
+          let onLine = false;
+          for (const r of full.getClientRects()) {
+            if (r.width === 0 && r.height === 0) continue;
+            if (clientY >= r.top - 8 && clientY <= r.bottom + 8) {
+              onLine = true;
+              break;
+            }
+          }
+          full.detach?.();
+          if (!onLine) {
+            if (!inMark) unmarkedSoFar += v.length;
+            continue;
+          }
+          let localBest = 0;
+          let localBestDist = Infinity;
+          for (let i = 0; i <= v.length; i++) {
+            const r = document.createRange();
+            r.setStart(t, i);
+            r.setEnd(t, i);
+            const rect = r.getBoundingClientRect();
+            r.detach?.();
+            const d = Math.hypot(clientX - rect.left, clientY - rect.top);
+            if (d < localBestDist) {
+              localBestDist = d;
+              localBest = i;
+            }
+          }
+          const cand = unmarkedSoFar + (inMark ? 0 : localBest);
+          if (localBestDist < fallbackBestDist) {
+            fallbackBestDist = localBestDist;
+            fallbackOffset = cand;
+          }
+          if (!inMark) unmarkedSoFar += v.length;
+        }
+        return fallbackOffset;
+      }
+    }
+
+    return best;
+  };
+
+  const isWordChar = (ch: string | undefined) =>
+    ch != null && ch.length > 0 && /[\p{L}\p{N}]/u.test(ch);
+
+  // Expand from a character index to word boundaries.
+  // If the index lands on whitespace/punctuation, expand to the nearest word.
+  const expandToWord = (text: string, i: number): [number, number] => {
+    if (i < 0 || i >= text.length) return [i, i];
+    // If on a word char, expand normally
+    if (isWordChar(text[i])) {
+      let s = i;
+      while (s > 0 && isWordChar(text[s - 1])) s--;
+      let e = i;
+      while (e < text.length - 1 && isWordChar(text[e + 1])) e++;
+      return [s, e];
+    }
+    // On whitespace/punctuation: look left and right for nearest word
+    let leftWordEnd = -1;
+    for (let j = i - 1; j >= 0; j--) {
+      if (isWordChar(text[j])) {
+        leftWordEnd = j;
+        break;
+      }
+    }
+    let rightWordStart = -1;
+    for (let j = i; j < text.length; j++) {
+      if (isWordChar(text[j])) {
+        rightWordStart = j;
+        break;
+      }
+    }
+    if (leftWordEnd >= 0 && rightWordStart >= 0) {
+      // Between two words - pick closer one
+      const distLeft = i - leftWordEnd;
+      const distRight = rightWordStart - i;
+      if (distLeft <= distRight) {
+        let s = leftWordEnd;
+        while (s > 0 && isWordChar(text[s - 1])) s--;
+        let e = leftWordEnd;
+        while (e < text.length - 1 && isWordChar(text[e + 1])) e++;
+        return [s, e];
+      } else {
+        let s = rightWordStart;
+        while (s > 0 && isWordChar(text[s - 1])) s--;
+        let e = rightWordStart;
+        while (e < text.length - 1 && isWordChar(text[e + 1])) e++;
+        return [s, e];
+      }
+    }
+    if (leftWordEnd >= 0) {
+      let s = leftWordEnd;
+      while (s > 0 && isWordChar(text[s - 1])) s--;
+      let e = leftWordEnd;
+      while (e < text.length - 1 && isWordChar(text[e + 1])) e++;
+      return [s, e];
+    }
+    if (rightWordStart >= 0) {
+      let s = rightWordStart;
+      while (s > 0 && isWordChar(text[s - 1])) s--;
+      let e = rightWordStart;
+      while (e < text.length - 1 && isWordChar(text[e + 1])) e++;
+      return [s, e];
+    }
+    return [i, i];
+  };
+
+  // Re-derive overlay boxes + handles + toolbar from the current char range.
+  const recomputeSelection = () => {
+    const idx = charIndexRef.current;
+    if (!selectionLockRef.current || !idx) return;
+    const a = Math.min(selStartCharRef.current, selEndCharRef.current);
+    const b = Math.max(selStartCharRef.current, selEndCharRef.current);
+    if (a < 0 || b < 0) return;
+    const range = rangeFromChars(a, b + 1);
     if (!range) return;
 
-    // If the target nodes no longer exist (chapter changed / re-rendered), drop it.
-    let valid = false;
-    try {
-      const start = range.startContainer as Node;
-      const end = range.endContainer as Node;
-      valid =
-        start &&
-        end &&
-        (start.nodeType === 1 || start.nodeType === 3) &&
-        (end.nodeType === 1 || end.nodeType === 3) &&
-        document.documentElement.contains(start) &&
-        document.documentElement.contains(end);
-    } catch {
-      valid = false;
+    // Anchor to the content wrapper (the `relative` positioning context of the
+    // overlay). Using the wrapper's own rect accounts for scroll automatically,
+    // so the boxes stay glued to the text as the page scrolls.
+    const wrapper = contentWrapperRef.current;
+    if (!wrapper) return;
+    const wr = wrapper.getBoundingClientRect();
+
+    const boxes: { top: number; left: number; width: number; height: number }[] = [];
+    let minTop = Infinity;
+    let maxBottom = -Infinity;
+    let minLeft = Infinity;
+    let maxRight = -Infinity;
+    for (const r of range.getClientRects()) {
+      if (r.width === 0 && r.height === 0) continue;
+      boxes.push({
+        top: r.top - wr.top,
+        left: r.left - wr.left,
+        width: r.width,
+        height: r.height,
+      });
+      if (r.top < minTop) minTop = r.top;
+      if (r.bottom > maxBottom) maxBottom = r.bottom;
+      if (r.left < minLeft) minLeft = r.left;
+      if (r.right > maxRight) maxRight = r.right;
     }
-    if (!valid) {
-      preservedRangeRef.current = null;
+    setActiveSelBoxes(boxes);
+    activeSelBoxesRef.current = boxes;
+
+    // Toolbar (viewport coords).
+    let text = idx.text.substring(a, b + 1).replace(/\s+/g, ' ');
+    text = text.trim();
+    if (!text) text = idx.text.substring(a, b + 1);
+    const union = { left: minLeft, right: maxRight, top: minTop, bottom: maxBottom };
+    if (minTop !== Infinity) {
+      const rect = { left: union.left, width: union.right - union.left, top: minTop, height: maxBottom - minTop };
+      const menuPos = {
+        visible: true as const,
+        x: Math.max(20, Math.min(window.innerWidth - 280, rect.left + rect.width / 2 - 130)),
+        y: Math.max(70, rect.top - 54),
+        text,
+      };
+      setSelectionMenu(menuPos);
+    }
+
+    // Handle positions (viewport coords) at the selection boundaries: start
+    // handle before the first char, end handle after the last char.
+    const startRect = caretRectAt(a);
+    const endRect = caretRectAt(b + 1);
+    if (startRect && endRect) {
+      setHandlePos({
+        start: { x: startRect.left, y: startRect.top },
+        end: { x: endRect.left + endRect.width, y: endRect.top },
+      });
+    } else {
+      setHandlePos(null);
+    }
+    range.detach?.();
+  };
+
+  // Start a custom selection from a viewport point (center of the content).
+  const startSelectionAtCenter = () => {
+    // Ensure char index exists; rebuild if needed (e.g., early click before effect runs).
+    if (!charIndexRef.current) {
+      rebuildCharIndex();
+    }
+    if (!charIndexRef.current) {
+      console.warn('[select] charIndex still null after rebuild');
       return;
     }
 
-    try {
-      const sel = window.getSelection();
-      if (!sel) return;
+    const el = contentContainerRef.current;
+    if (!el) return;
 
-      // If the live selection already matches, don't churn the DOM — yanking the
-      // range out on Android WebView is what makes the highlight disappear.
-      if (!sel.isCollapsed && sel.rangeCount > 0) {
-        const cur = sel.getRangeAt(0);
-        if (cur.compareBoundaryPoints(Range.START_TO_START, range) === 0 &&
-            cur.compareBoundaryPoints(Range.END_TO_END, range) === 0) {
-          return;
-        }
+    // Try center first
+    let rect = el.getBoundingClientRect();
+    let clientX = rect.left + rect.width / 2;
+    let clientY = rect.top + rect.height / 2;
+    let c = charAtPoint(clientX, clientY);
+
+    // If center misses (margin, image, etc.), scan downward for first text line
+    if (c < 0) {
+      const step = 24;
+      const maxY = rect.bottom - 20;
+      clientY = rect.top + 40; // start below header
+      while (clientY < maxY) {
+        c = charAtPoint(clientX, clientY);
+        if (c >= 0) break;
+        clientY += step;
       }
-
-      restoringSelectionRef.current = true;
-      sel.removeAllRanges();
-      const clone = range.cloneRange();
-      try { sel.addRange(clone); } catch { /* ignore */ }
-    } catch {
-      // The document may have changed since the range was captured.
-    } finally {
-      window.setTimeout(() => {
-        restoringSelectionRef.current = false;
-      }, 0);
     }
-  }
 
-  function handleTextSelection() {
-    const selection = window.getSelection();
-    if (!selection || selection.isCollapsed) {
-      // Keep toolbar if already shown — Android clears selection on finger lift
-      if (selectionMenuVisibleRef.current || selectionHoldRef.current) {
-        restorePreservedSelection();
-        return;
+    // If still no hit, try scanning across the width at a few Y positions
+    if (c < 0) {
+      const scanYs = [rect.top + 60, rect.top + rect.height * 0.3, rect.top + rect.height * 0.5];
+      for (const y of scanYs) {
+        for (let x = rect.left + 20; x < rect.right - 20; x += 40) {
+          c = charAtPoint(x, y);
+          if (c >= 0) { clientX = x; clientY = y; break; }
+        }
+        if (c >= 0) break;
       }
-      setSelectionMenu(null);
+    }
+
+    if (c < 0) {
+      console.warn('[select] no selectable text found in viewport');
       return;
     }
 
-    const text = selection.toString().trim();
-    if (!text || text.length < 2) {
-      if (selectionMenuVisibleRef.current || selectionHoldRef.current) return;
-      setSelectionMenu(null);
-      return;
-    }
+    startSelection(clientX, clientY);
+  };
 
-    // Ensure selection is inside the reader article
-    if (articleRef.current && articleRef.current.contains(selection.anchorNode)) {
-      try {
-        const range = selection.getRangeAt(0);
-        preservedRangeRef.current = range.cloneRange();
-        const rect = range.getBoundingClientRect();
-        if (rect.width > 0 && rect.height > 0) {
-          const menuPos = {
-            visible: true as const,
-            x: Math.max(20, Math.min(window.innerWidth - 280, rect.left + rect.width / 2 - 130)),
-            y: Math.max(70, rect.top - 54),
-            text,
-          };
-          selectionHoldRef.current = { text: menuPos.text, x: menuPos.x, y: menuPos.y };
-          selectionMenuVisibleRef.current = true;
-          selectionMenuShownAtRef.current = Date.now();
-          setSelectionMenu(menuPos);
-        }
-      } catch {
-        if (!selectionHoldRef.current && !selectionMenuVisibleRef.current) setSelectionMenu(null);
-      }
-    } else if (!selectionHoldRef.current && !selectionMenuVisibleRef.current) {
-      setSelectionMenu(null);
-    }
-  }
+  // Start a custom selection from a long-press at a viewport point.
+  const startSelection = (clientX: number, clientY: number) => {
+    const idx = charIndexRef.current;
+    if (!idx) return;
+    const c = charAtPoint(clientX, clientY);
+    if (c < 0) return;
+    // Clear any native DOM selection so the WebView's own highlight can't
+    // coexist with (and compete against) our custom overlay.
+    window.getSelection()?.removeAllRanges();
+    const [ws, we] = expandToWord(idx.text, c);
+    selStartCharRef.current = ws;
+    selEndCharRef.current = we;
+    selectionLockRef.current = true;
+    dragHandleRef.current = null;
+    recomputeSelection();
+  };
 
-  const captureSelectionAfterTouch = () => {
-    // Android WebView clears the visible selection on touchend and can drop the
-    // `selectionchange` firing, which made the highlight vanish on finger lift.
-    // Capture promptly, then re-assert the preserved range a couple of times
-    // shortly after so the native handles + tint stay live for further editing.
-    [
-      { d: 0, restore: false },
-      { d: 90, restore: true },
-      { d: 260, restore: true },
-    ].forEach(({ d, restore }) => {
-      window.setTimeout(() => {
-        if (!restore) {
-          handleTextSelectionRef.current();
-          return;
-        }
-        const sel = window.getSelection();
-        const collapsed = !sel || sel.isCollapsed;
-        if (collapsed && (selectionHoldRef.current || selectionMenuVisibleRef.current)) {
-          restorePreservedSelection();
-          handleTextSelectionRef.current();
+  // Enter a drag on one of the handles; pointermove (via onDragMoveRef) will
+  // call updateDragBoundary. Uses window listeners so the drag isn't lost if
+  // the finger leaves the handle element.
+  const beginHandleDrag = (which: 'start' | 'end') => {
+    if (!selectionLockRef.current) return;
+    dragHandleRef.current = which;
+    onDragMoveRef.current = (clientX: number, clientY: number) => {
+      const idx = charIndexRef.current;
+      if (!idx) return;
+      let c = charAtPoint(clientX, clientY);
+      if (c < 0) return;
+      // During drag, use exact character position (no word expansion) for smooth,
+      // precise control. Word expansion happens on drag END.
+      if (dragHandleRef.current === 'start') selStartCharRef.current = c;
+      else if (dragHandleRef.current === 'end') selEndCharRef.current = c;
+      recomputeSelection();
+    };
+    onDragEndRef.current = () => {
+      // On release, snap the dragged handle to word boundary for nicer UX
+      const idx = charIndexRef.current;
+      if (idx && dragHandleRef.current) {
+        const { text } = idx;
+        if (dragHandleRef.current === 'start') {
+          const [ws] = expandToWord(text, selStartCharRef.current);
+          selStartCharRef.current = ws;
         } else {
-          handleTextSelectionRef.current();
+          const [, we] = expandToWord(text, selEndCharRef.current);
+          selEndCharRef.current = we;
         }
-      }, d);
-    });
+        recomputeSelection();
+      }
+      dragHandleRef.current = null;
+      onDragMoveRef.current = null;
+      onDragEndRef.current = () => {};
+    };
   };
 
   const clearSelectionState = () => {
     setSelectionMenu(null);
-    selectionHoldRef.current = null;
-    selectionMenuVisibleRef.current = false;
-    preservedRangeRef.current = null;
-    window.getSelection()?.removeAllRanges();
+    setActiveSelBoxes([]);
+    setHandlePos(null);
+    selectionLockRef.current = false;
+    selStartCharRef.current = -1;
+    selEndCharRef.current = -1;
+    dragHandleRef.current = null;
+    longPressArmedRef.current = false;
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  // Wire the stable gesture refs to the implementations above.
+  onLongPressRef.current = (x, y) => startSelection(x, y);
+
+  // Dismiss-on-tap-outside handler (used by the pointer/touch effect below).
+  onDismissTapRef.current = (e: PointerEvent | TouchEvent) => {
+    if (!selectionLockRef.current) return;
+    if (dragHandleRef.current) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('#reader-floating-selection-menu')) return;
+    if (target.closest('.libriaudio-sel-handle')) return;
+    // A tap on the selected text itself keeps the selection open so the
+    // handles can be grabbed repeatedly; anywhere else dismisses it.
+    const boxes = activeSelBoxesRef.current;
+    let inside = false;
+    const { clientX, clientY } = 'touches' in e
+      ? { clientX: e.changedTouches[0]?.clientX || 0, clientY: e.changedTouches[0]?.clientY || 0 }
+      : { clientX: e.clientX, clientY: e.clientY };
+    if (boxes && boxes.length > 0) {
+      const wrapper = contentWrapperRef.current;
+      if (wrapper) {
+        const wr = wrapper.getBoundingClientRect();
+        const cx = clientX - wr.left;
+        const cy = clientY - wr.top;
+        const pad = 20;
+        inside = boxes.some(
+          (b) =>
+            cx >= b.left - pad && cx <= b.left + b.width + pad && cy >= b.top - pad && cy <= b.top + b.height + pad
+        );
+      }
+    }
+    if (!inside) clearSelectionState();
   };
 
   const handleDictionaryLookup = async (rawText: string) => {
@@ -770,6 +1345,8 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     const currentChapterTitle =
       currentBook.ebookChapters?.[currentChapterIndex]?.title ||
       `Chapter ${currentChapterIndex + 1}`;
+    const hasOffsets =
+      selStartCharRef.current >= 0 && selEndCharRef.current >= 0;
 
     const newAnnotation: EbookAnnotation = {
       id: `ann_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
@@ -779,6 +1356,9 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
       text: selectionMenu.text,
       color,
       createdAt: Date.now(),
+      ...(hasOffsets
+        ? { startChar: selStartCharRef.current, endChar: selEndCharRef.current }
+        : {}),
     };
 
     saveAnnotations([...annotations, newAnnotation]);
@@ -791,6 +1371,8 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     const chapterTitle =
       currentBook.ebookChapters?.[currentChapterIndex]?.title ||
       `Chapter ${currentChapterIndex + 1}`;
+    const hasOffsets =
+      selStartCharRef.current >= 0 && selEndCharRef.current >= 0;
 
     const newAnnotation: EbookAnnotation = {
       id: `ann_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
@@ -800,6 +1382,9 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
       text: selectionMenu.text,
       color: 'gold',
       createdAt: Date.now(),
+      ...(hasOffsets
+        ? { startChar: selStartCharRef.current, endChar: selEndCharRef.current }
+        : {}),
     };
     saveAnnotations([...annotations, newAnnotation]);
 
@@ -1089,14 +1674,22 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
         }
       });
 
-      // 2. Safe Text-Node-Only Highlighting (avoids corrupting image tags or attributes)
+      // 2. Highlights + search marks, injected into clean text nodes (avoids
+      //    corrupting image tags or attributes).
       const currentChapterAnn = annotations.filter(
         (a) => a.chapterIndex === currentChapterIndex
       );
-      const sortedAnn = [...currentChapterAnn].sort((a, b) => b.text.length - a.text.length);
       const hasSearch = searchQuery.trim().length > 1;
+      // Newer annotations carry precise character offsets; older ones (saved
+      // before offsets existed) fall back to text-matching.
+      const offsetAnn = currentChapterAnn.filter(
+        (a) => typeof a.startChar === 'number' && typeof a.endChar === 'number'
+      );
+      const legacyAnn = currentChapterAnn.filter(
+        (a) => !(typeof a.startChar === 'number' && typeof a.endChar === 'number')
+      );
 
-      if (sortedAnn.length > 0 || hasSearch) {
+      if (currentChapterAnn.length > 0 || hasSearch) {
         const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, null);
         const textNodes: Text[] = [];
         let node: Node | null;
@@ -1112,43 +1705,117 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
           }
         }
 
-        textNodes.forEach((textNode) => {
-          const originalText = textNode.nodeValue || '';
-          if (!originalText.trim()) return;
+        // ---- Legacy text-match highlighting (annotations without offsets) ----
+        if (legacyAnn.length > 0) {
+          const sorted = [...legacyAnn].sort((a, b) => b.text.length - a.text.length);
+          textNodes.forEach((textNode) => {
+            const originalText = textNode.nodeValue || '';
+            if (!originalText.trim()) return;
+            let hasMatches = false;
+            let html = originalText
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;');
+            sorted.forEach((ann) => {
+              if (originalText.toLowerCase().includes(ann.text.toLowerCase())) {
+                const escaped = escapeHtmlText(ann.text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const regex = new RegExp(`(${escaped})`, 'gi');
+                html = html.replace(
+                  regex,
+                  `<mark class="libriaudio-hl libriaudio-hl-${ann.color}" data-annotation-id="${ann.id}">$1</mark>`
+                );
+                hasMatches = true;
+              }
+            });
+            if (hasMatches && textNode.parentNode) {
+              const span = doc.createElement('span');
+              span.innerHTML = html;
+              textNode.parentNode.replaceChild(span, textNode);
+            }
+          });
+        }
 
-          let hasMatches = false;
-          let html = originalText
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
+        // ---- Offset-based highlighting (exact selected range) ----
+        if (offsetAnn.length > 0) {
+          // Build the flattened text + node mapping over the current DOM,
+          // skipping text inside marks (matches the reader's own index, so the
+          // stored offsets line up exactly).
+          const w2 = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, null);
+          const parts: { node: Text; start: number; end: number }[] = [];
+          let flat = '';
+          let n2: Node | null;
+          while ((n2 = w2.nextNode())) {
+            const t = n2 as Text;
+            const v = t.nodeValue || '';
+            if (!v) continue;
+            const parent = t.parentElement;
+            if (
+              parent &&
+              ['mark', 'script', 'style', 'button', 'noscript'].includes(
+                parent.tagName.toLowerCase()
+              )
+            ) {
+              continue;
+            }
+            parts.push({ node: t, start: flat.length, end: flat.length + v.length - 1 });
+            flat += v;
+          }
 
-          // Apply annotations safely to text
-          sortedAnn.forEach((ann) => {
-            if (originalText.toLowerCase().includes(ann.text.toLowerCase())) {
-              const escaped = escapeHtmlText(ann.text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-              const regex = new RegExp(`(${escaped})`, 'gi');
-              html = html.replace(
-                regex,
-                `<mark class="libriaudio-hl libriaudio-hl-${ann.color}" data-annotation-id="${ann.id}">$1</mark>`
-              );
-              hasMatches = true;
+          const marks: { s: number; e: number; color: string; id: string }[] = [];
+          offsetAnn.forEach((ann) => {
+            const s = Math.min(ann.startChar!, ann.endChar!);
+            const e = Math.max(ann.startChar!, ann.endChar!);
+            if (s <= e && s >= 0 && e < flat.length) {
+              marks.push({ s, e, color: ann.color, id: ann.id });
             }
           });
 
-          // Apply search matches safely to text
-          if (hasSearch && originalText.toLowerCase().includes(searchQuery.trim().toLowerCase())) {
+          parts.forEach(({ node, start, end }) => {
+            const v = node.nodeValue || '';
+            const nodeMarks = marks
+              .filter((m) => m.s <= end && m.e >= start)
+              .sort((a, b) => a.s - b.s);
+            if (nodeMarks.length === 0) return;
+            let html = '';
+            let pos = 0;
+            for (const m of nodeMarks) {
+              const ls = Math.max(0, m.s - start);
+              const le = Math.min(v.length - 1, m.e - start);
+              if (ls < pos || ls > le) continue;
+              html += escapeHtmlText(v.slice(pos, ls));
+              html += `<mark class="libriaudio-hl libriaudio-hl-${m.color}" data-annotation-id="${m.id}">${escapeHtmlText(v.slice(ls, le + 1))}</mark>`;
+              pos = le + 1;
+            }
+            html += escapeHtmlText(v.slice(pos));
+            if (node.parentNode) {
+              const span = doc.createElement('span');
+              span.innerHTML = html;
+              node.parentNode.replaceChild(span, node);
+            }
+          });
+        }
+
+        // ---- Search matches ----
+        if (hasSearch) {
+          const w3 = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, null);
+          let n3: Node | null;
+          while ((n3 = w3.nextNode())) {
+            const textNode = n3 as Text;
+            const originalText = textNode.nodeValue || '';
+            if (!originalText.trim()) continue;
+            if (!originalText.toLowerCase().includes(searchQuery.trim().toLowerCase())) continue;
             const escaped = searchQuery.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const searchRegex = new RegExp(`(${escaped})`, 'gi');
-            html = html.replace(searchRegex, `<mark class="libriaudio-search-match">$1</mark>`);
-            hasMatches = true;
-          }
-
-          if (hasMatches && textNode.parentNode) {
+            const html = originalText
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(searchRegex, `<mark class="libriaudio-search-match">$1</mark>`);
             const span = doc.createElement('span');
             span.innerHTML = html;
-            textNode.parentNode.replaceChild(span, textNode);
+            textNode.parentNode!.replaceChild(span, textNode);
           }
-        });
+        }
       }
 
       return doc.body.innerHTML;
@@ -1156,6 +1823,13 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
       return htmlContent;
     }
   }, [htmlContent, annotations, currentChapterIndex, searchQuery]);
+
+  // Rebuild the character-offset index whenever the rendered chapter text
+  // changes (runs after the article element has mounted with the new content).
+  useEffect(() => {
+    if (!isOpen) return;
+    rebuildCharIndex();
+  }, [isOpen, processedHtmlContent, currentChapterIndex]);
 
   // Compute Cross-Chapter Search Results with Context Snippets
   const crossChapterSearchResults = useMemo(() => {
@@ -1235,10 +1909,11 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     }
     if (selectionMenu) {
       // A `click` often fires immediately after the touchend that finished a
-      // text selection (especially on Android WebView). If this is that same
-      // gesture, don't tear the selection/menu down — otherwise the highlight
-      // disappears the moment the user lifts their finger.
-      if (Date.now() - selectionMenuShownAtRef.current < 700) {
+      // text selection (especially on Android WebView). The selection now stays
+      // locked (Moon-Reader style) and is deliberately dismissed only by the
+      // outside-tap pointer handler, scrolling, or an explicit action — never by
+      // a stray click here, which used to make the highlight vanish.
+      if (selectionLockRef.current) {
         return;
       }
       clearSelectionState();
@@ -1497,7 +2172,6 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
             <button
               id="btn-reader-three-dot"
               onClick={() => {
-                restorePreservedSelection();
                 setShowThreeDotMenu(!showThreeDotMenu);
               }}
               className={`p-2 rounded-xl border transition-all ${
@@ -1572,12 +2246,14 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
           ref={contentContainerRef}
           id="reader-content-scroll"
           onScroll={handleScroll}
-          onMouseUp={captureSelectionAfterTouch}
-          onTouchEnd={captureSelectionAfterTouch}
           onClick={handleContentClick}
-          className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-black/20 pb-32 transition-all relative select-text"
+          onTouchStart={() => {}}
+          className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-black/20 pb-32 transition-all relative"
         >
-          <div className={`${columnWidths[settings.columnWidth]} mx-auto px-5 py-8 md:px-12 md:py-12`}>
+          <div
+            ref={contentWrapperRef}
+            className={`${columnWidths[settings.columnWidth]} mx-auto px-5 py-8 md:px-12 md:py-12 relative`}
+          >
             {isLoading ? (
               <div className="space-y-6 py-6 animate-pulse">
                 <div className="flex items-center justify-between pb-4 border-b border-[var(--border-subtle)]">
@@ -1651,13 +2327,63 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
 
                 <article
                   ref={articleRef}
-                  className={`prose ${currentTheme.prose} ${settings.textAlign === 'justify' ? 'text-justify' : 'text-left'} max-w-full leading-relaxed transition-all select-text`}
+                  className={`prose ${currentTheme.prose} ${settings.textAlign === 'justify' ? 'text-justify' : 'text-left'} max-w-full leading-relaxed transition-all`}
                   style={{
                     fontSize: `${settings.fontSize}px`,
                     lineHeight: settings.lineHeight,
                   }}
                   dangerouslySetInnerHTML={{ __html: processedHtmlContent }}
                 />
+
+                {/* Custom (Moon+ style) selection overlay: our own highlight paint
+                    + draggable handles. Drawn in JS; never touches the article's
+                    HTML so committed highlights / search marks are unaffected. */}
+                {activeSelBoxes.length > 0 && (
+                  <div className="pointer-events-none absolute inset-0 z-10" aria-hidden="true">
+                    {activeSelBoxes.map((b, i) => (
+                      <span
+                        key={i}
+                        className="libriaudio-active-sel"
+                        style={{ top: b.top, left: b.left, width: b.width, height: b.height }}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {handlePos && selectionLockRef.current && (
+                  <>
+                    <div
+                      ref={selStartHandleRef}
+                      className="libriaudio-sel-handle"
+                      style={{ left: handlePos.start.x - 11, top: handlePos.start.y - 11 }}
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        beginHandleDrag('start');
+                      }}
+                      onTouchStart={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        beginHandleDrag('start');
+                      }}
+                    />
+                    <div
+                      ref={selEndHandleRef}
+                      className="libriaudio-sel-handle"
+                      style={{ left: handlePos.end.x - 11, top: handlePos.end.y - 11 }}
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        beginHandleDrag('end');
+                      }}
+                      onTouchStart={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        beginHandleDrag('end');
+                      }}
+                    />
+                  </>
+                )}
 
                 {/* Chapter Navigation Footer at bottom of chapter text */}
                 {currentBook.ebookChapters && currentBook.ebookChapters.length > 1 && (
@@ -2462,7 +3188,6 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
         <button
           id="btn-reader-bottom-settings"
           onClick={() => {
-            restorePreservedSelection();
             setShowSettingsDropdown(!showSettingsDropdown);
           }}
           className={`p-2 rounded-xl border transition-all cursor-pointer ${

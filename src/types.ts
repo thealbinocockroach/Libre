@@ -61,6 +61,11 @@ export interface EbookAnnotation {
   color: HighlightColor;
   note?: string;
   createdAt: number;
+  // Character range (into the chapter's flattened visible text) of the exact
+  // selected text. Lets the highlight renderer wrap precisely what was
+  // selected instead of relying on fragile text-matching.
+  startChar?: number;
+  endChar?: number;
 }
 
 export interface EbookBookmark {
