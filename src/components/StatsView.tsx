@@ -73,6 +73,15 @@ export const StatsView: React.FC<StatsViewProps> = ({
   const velocity = useMemo(() => getListeningVelocity(), [summary]);
   const timeOfDay = useMemo(() => getTimeOfDayDistribution(), [summary, sessions]);
 
+  // Words per minute calculation from reading sessions
+  const wordsPerMinute = useMemo(() => {
+    const sessionsWithWords = sessions.filter((s) => s.wordsRead && s.wordsRead > 0 && s.durationSeconds > 0);
+    if (sessionsWithWords.length === 0) return 0;
+    const totalWords = sessionsWithWords.reduce((sum, s) => sum + (s.wordsRead || 0), 0);
+    const totalMinutes = sessionsWithWords.reduce((sum, s) => sum + s.durationSeconds, 0) / 60;
+    return totalMinutes > 0 ? Math.round(totalWords / totalMinutes) : 0;
+  }, [sessions]);
+
   // Audio vs Ebook Ratio Math
   const audioSecs = summary.totalListenedSeconds;
   const readSecs = summary.totalReadSeconds;
@@ -138,7 +147,7 @@ export const StatsView: React.FC<StatsViewProps> = ({
   };
 
   return (
-    <div id="stats-view-page" className="space-y-6 max-w-4xl mx-auto pb-16">
+    <div id="stats-view-page" className="space-y-6 max-w-2xl mx-auto w-full p-4 md:p-8 pb-16">
       {/* Header Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[var(--border-subtle)]">
         <div>
@@ -196,7 +205,7 @@ export const StatsView: React.FC<StatsViewProps> = ({
       )}
 
       {/* Primary Key Metric Highlights */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {/* Audiobook Time */}
         <div className="p-4 rounded-2xl bg-[var(--surface)] border border-[var(--border-subtle)] flex flex-col justify-between relative overflow-hidden group hover:border-[var(--accent)] transition-all">
           <div className="flex items-center justify-between text-[var(--text-dim)] text-[10px] uppercase font-semibold">
@@ -259,6 +268,22 @@ export const StatsView: React.FC<StatsViewProps> = ({
             </div>
             <p className="text-[10px] text-emerald-400/80 mt-0.5 font-mono">
               ~{velocity.weeklyVelocityHours}h weekly pace
+            </p>
+          </div>
+        </div>
+
+        {/* Reading Speed */}
+        <div className="p-4 rounded-2xl bg-[var(--surface)] border border-[var(--border-subtle)] flex flex-col justify-between relative overflow-hidden group hover:border-purple-500/30 transition-all">
+          <div className="flex items-center justify-between text-[var(--text-dim)] text-[10px] uppercase font-semibold">
+            <span>Reading Speed</span>
+            <Zap className="w-4 h-4 text-purple-400" />
+          </div>
+          <div className="mt-3">
+            <div className="text-lg sm:text-xl font-bold font-mono text-[var(--text-main)]">
+              {wordsPerMinute > 0 ? <>{wordsPerMinute} <span className="text-xs text-[var(--text-dim)] font-sans">wpm</span></> : '—'}
+            </div>
+            <p className="text-[10px] text-purple-400/80 mt-0.5 font-mono">
+              {wordsPerMinute > 0 ? 'avg across sessions' : 'read to track speed'}
             </p>
           </div>
         </div>

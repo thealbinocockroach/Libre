@@ -270,25 +270,63 @@ public class DownloadService extends Service {
         File tmp = new File(outFile.getAbsolutePath() + ".tmp");
         long existingBytes = tmp.exists() ? tmp.length() : 0;
 
-        HttpURLConnection conn = openConnectionWithRedirects(audioUrl);
-        try {
-            if (existingBytes > 0) {
+        String currentUrl = audioUrl;
+        if (currentUrl.startsWith("http://")) {
+            currentUrl = "https://" + currentUrl.substring(7);
+        }
+
+        HttpURLConnection conn = null;
+        boolean rangeRequested = false;
+
+        for (int i = 0; i < 10; i++) {
+            URL url = new URL(currentUrl);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(30000);
+            conn.setReadTimeout(60000);
+            conn.setInstanceFollowRedirects(false);
+            conn.setRequestProperty("User-Agent", UA);
+            conn.setRequestProperty("Accept", "*/*");
+            conn.setRequestProperty("Accept-Language", "en-US,en;q=0.9");
+            conn.setRequestProperty("Referer", "https://archive.org/");
+
+            if (existingBytes > 0 && !rangeRequested) {
                 conn.setRequestProperty("Range", "bytes=" + existingBytes + "-");
+                rangeRequested = true;
             }
+
             conn.connect();
 
             int responseCode = conn.getResponseCode();
+            if (responseCode == HttpURLConnection.HTTP_MOVED_PERM
+                    || responseCode == HttpURLConnection.HTTP_MOVED_TEMP
+                    || responseCode == 303 || responseCode == 307 || responseCode == 308) {
+                String location = conn.getHeaderField("Location");
+                conn.disconnect();
+                if (location == null || location.isEmpty()) {
+                    throw new Exception("Redirect without Location header");
+                }
+                if (location.startsWith("http://")) {
+                    location = "https://" + location.substring(7);
+                }
+                if (!location.startsWith("http")) {
+                    location = new URL(url, location).toString();
+                }
+                currentUrl = location;
+                continue;
+            }
+
             if (responseCode == 416) {
                 // Range not satisfiable — file may already be complete
                 if (isValidFile(outFile)) return true;
                 existingBytes = 0;
                 conn.disconnect();
-                conn = openConnectionWithRedirects(audioUrl);
-                conn.connect();
-                responseCode = conn.getResponseCode();
+                conn = null;
+                rangeRequested = false;
+                continue;
             }
 
             if (responseCode < 200 || responseCode >= 400) {
+                if (conn != null) conn.disconnect();
                 return false;
             }
 
@@ -345,9 +383,10 @@ public class DownloadService extends Service {
             }
             cb.onProgress(outFile.length(), outFile.length());
             return isValidFile(outFile);
-        } finally {
-            conn.disconnect();
         }
+
+        if (conn != null) conn.disconnect();
+        return false;
     }
 
     private HttpURLConnection openConnectionWithRedirects(String urlString) throws Exception {

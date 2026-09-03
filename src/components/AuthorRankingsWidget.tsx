@@ -6,6 +6,7 @@ import {
   formatTrueDuration,
   formatTrueDurationShort,
 } from '../utils/activityTracker';
+import { useCoverAspect, getCoverAspectClass } from '../utils/coverAspect';
 import {
   Trophy,
   Headphones,
@@ -35,6 +36,8 @@ export const AuthorRankingsWidget: React.FC<AuthorRankingsWidgetProps> = ({
   const [filterMode, setFilterMode] = useState<'all' | 'audio' | 'read'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedAuthor, setExpandedAuthor] = useState<string | null>(null);
+
+  const coverAspectClass = getCoverAspectClass(useCoverAspect());
 
   const refreshRankings = () => {
     const list = getAuthorRankings(history);
@@ -284,7 +287,7 @@ export const AuthorRankingsWidget: React.FC<AuthorRankingsWidgetProps> = ({
                               <img
                                 src={b.coverImageUrl}
                                 alt={b.title}
-                                className="w-8 h-11 object-cover rounded-lg bg-black/40 shrink-0 border border-[var(--border-subtle)]"
+                                className={`w-8 ${coverAspectClass} object-cover rounded-lg bg-black/40 shrink-0 border border-[var(--border-subtle)]`}
                                 referrerPolicy="no-referrer"
                               />
                             )}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Audiobook, AudioTrack } from '../types';
-import { Search, X, Play, Clock, BookOpen, SearchX, Ghost, Compass, Brain, Anchor, Heart, Feather, Landmark, Smile, LayoutGrid, ArrowLeft } from 'lucide-react';
+import { Search, X, Play, Clock, BookOpen, SearchX, Ghost, Compass, Brain, Anchor, Heart, Feather, Landmark, Smile, LayoutGrid, ArrowLeft, User, Rocket, Wand, Baby, Drama, BookText, Leaf, Globe, Church, Columns, Scroll, Trophy, FlaskConical, Music, Shield, Zap, Map as MapIcon, Scale, Target, Lightbulb, GraduationCap, Mail, Home } from 'lucide-react';
 import {
   resolveFullTracklist,
   mapArchiveDocToAudiobook,
@@ -11,17 +11,39 @@ import {
 import { downloadAudiobook, isBookDownloaded } from '../utils/offlineStorage';
 import { getSavedQualityPreference } from '../utils/audioQualityManager';
 import { httpGetJson } from '../utils/httpClient';
+import { useCoverAspect, getCoverAspectClass } from '../utils/coverAspect';
 
 const GENRE_ICONS: Record<string, typeof Search> = {
   Search,
   Ghost,
-  Compass,
+  Rocket,
+  Wand,
   Brain,
   Anchor,
   Heart,
   Feather,
   Landmark,
   Smile,
+  Baby,
+  Drama,
+  BookText,
+  Leaf,
+  Globe,
+  Church,
+  Columns,
+  Scroll,
+  Trophy,
+  FlaskConical,
+  Music,
+  Shield,
+  Zap,
+  MapIcon,
+  Scale,
+  Target,
+  Lightbulb,
+  GraduationCap,
+  Mail,
+  Home,
 };
 
 interface SearchViewProps {
@@ -30,6 +52,7 @@ interface SearchViewProps {
   onReadBook?: (book: Audiobook) => void;
   onUploadEpub?: (book: Audiobook) => void;
   onOpenGenre?: (genreId: string) => void;
+  onOpenProfile?: () => void;
 }
 
 export const SearchView: React.FC<SearchViewProps> = ({
@@ -37,6 +60,8 @@ export const SearchView: React.FC<SearchViewProps> = ({
   onSelectBook,
   onReadBook,
   onUploadEpub,
+  onOpenGenre,
+  onOpenProfile,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedTerm, setDebouncedTerm] = useState('');
@@ -51,6 +76,8 @@ export const SearchView: React.FC<SearchViewProps> = ({
   const [genreBooks, setGenreBooks] = useState<Audiobook[]>([]);
   const [isGenreLoading, setIsGenreLoading] = useState(false);
   const [genreError, setGenreError] = useState<string | null>(null);
+
+  const coverAspectClass = getCoverAspectClass(useCoverAspect());
 
   const HISTORY_KEY = 'libriaudio_search_history';
 
@@ -319,6 +346,14 @@ export const SearchView: React.FC<SearchViewProps> = ({
       {/* Fixed (non-scrolling) header: title + search bar + quick chips */}
       <div id="search-header" className="shrink-0">
         <div className="flex items-center justify-between mb-3">
+          <button
+            id="btn-profile-search"
+            onClick={onOpenProfile}
+            className="w-9 h-9 rounded-full bg-[var(--surface)] border border-[var(--border-subtle)] hover:border-[var(--accent)] flex items-center justify-center text-[var(--text-dim)] hover:text-[var(--accent)] transition-all shrink-0"
+            aria-label="Profile menu"
+          >
+            <User className="w-4 h-4" />
+          </button>
           <h1 className="text-xl font-serif-display italic font-bold text-[var(--text-main)] tracking-wide">
             Search Catalog
           </h1>
@@ -386,7 +421,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
       </div>{/* end fixed header */}
 
       {/* Scrollable Content: genre browser, genre books, or search results */}
-      <div id="search-results-wrapper" className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 pb-6">
+      <div id="search-results-wrapper" className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 pb-40">
         {activeGenre ? (
           <div id="genre-books-wrapper" className="flex flex-col pb-2">
             <div className="flex items-center gap-2 mb-3">
@@ -439,7 +474,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
                       onClick={() => handleBookClick(book)}
                       className="flex items-center gap-3 p-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border-subtle)] hover:border-[var(--accent)] hover:bg-[var(--surface-raised)] transition-all cursor-pointer group active:scale-[0.98]"
                     >
-                      <div className="w-11 h-15 shrink-0 rounded-lg overflow-hidden bg-[var(--surface)] border border-[var(--border-subtle)] relative">
+                      <div className={`w-11 ${coverAspectClass} shrink-0 rounded-lg overflow-hidden bg-[var(--surface)] border border-[var(--border-subtle)] relative`}>
                         <img
                           src={book.coverImageUrl}
                           alt={book.title}
@@ -516,7 +551,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
                   Browse Genres
                 </h3>
               </div>
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              <div className="grid grid-cols-2 gap-2.5">
                 {LIBRIVOX_GENRES.map((genre) => {
                   const Icon = GENRE_ICONS[genre.iconName] || Compass;
                   return (
@@ -524,9 +559,9 @@ export const SearchView: React.FC<SearchViewProps> = ({
                       key={genre.id}
                       id={`genre-tile-${genre.id}`}
                       onClick={() => handleOpenGenre(genre.id)}
-                      className="group flex items-center gap-3 p-3.5 rounded-xl bg-[var(--surface)] hover:bg-[var(--surface-raised)] border border-[var(--border-subtle)] hover:border-[var(--accent)] transition-all active:scale-[0.98] text-left cursor-pointer"
+                      className="group flex items-center gap-3 p-3 rounded-xl bg-[var(--surface)] hover:bg-[var(--surface-raised)] border border-[var(--border-subtle)] hover:border-[var(--accent)] transition-all active:scale-[0.98] text-left cursor-pointer"
                     >
-                      <div className="w-10 h-10 shrink-0 rounded-xl bg-gradient-to-br from-[var(--accent-dim)] to-[var(--surface-raised)] border border-[var(--border-subtle)] flex items-center justify-center text-[var(--accent)] group-hover:from-[var(--accent)] group-hover:to-[var(--accent)] group-hover:text-black transition-all">
+                      <div className="w-9 h-9 shrink-0 rounded-xl bg-gradient-to-br from-[var(--accent-dim)] to-[var(--surface-raised)] border border-[var(--border-subtle)] flex items-center justify-center text-[var(--accent)] group-hover:from-[var(--accent)] group-hover:to-[var(--accent)] group-hover:text-black transition-all">
                         <Icon className="w-5 h-5" />
                       </div>
                       <div className="min-w-0">
@@ -568,7 +603,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
                   onClick={() => handleBookClick(book)}
                   className="flex items-center gap-3 p-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border-subtle)] hover:border-[var(--accent)] hover:bg-[var(--surface-raised)] transition-all cursor-pointer group active:scale-[0.98]"
                 >
-                  <div className="w-11 h-15 shrink-0 rounded-lg overflow-hidden bg-[var(--surface)] border border-[var(--border-subtle)] relative">
+                  <div className={`w-11 ${coverAspectClass} shrink-0 rounded-lg overflow-hidden bg-[var(--surface)] border border-[var(--border-subtle)] relative`}>
                     <img
                       src={book.coverImageUrl}
                       alt={book.title}

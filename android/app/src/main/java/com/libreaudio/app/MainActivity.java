@@ -12,6 +12,7 @@ import com.libreaudio.app.media.MediaNotificationPlugin;
 import com.libreaudio.app.media.AudioPlaybackPlugin;
 import com.libreaudio.app.download.DownloadPlugin;
 import com.libreaudio.app.selection.TextSelectionPlugin;
+import com.libreaudio.app.FileBackupPlugin;
 
 public class MainActivity extends BridgeActivity {
     @Override
@@ -20,6 +21,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(AudioPlaybackPlugin.class);
         registerPlugin(DownloadPlugin.class);
         registerPlugin(TextSelectionPlugin.class);
+        registerPlugin(FileBackupPlugin.class);
         super.onCreate(savedInstanceState);
         enableFullscreen();
     }

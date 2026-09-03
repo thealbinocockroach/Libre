@@ -6,6 +6,7 @@ import { SearchView } from './components/SearchView';
 import { LibraryView } from './components/LibraryView';
 import { StatsView } from './components/StatsView';
 import { SettingsView } from './components/SettingsView';
+import { ProfileDrawer } from './components/ProfileDrawer';
 import { MiniPlayerWidget } from './components/MiniPlayerWidget';
 import { FullPlayerModal } from './components/FullPlayerModal';
 import { GutenbergReaderModal } from './components/GutenbergReaderModal';
@@ -19,6 +20,7 @@ import { OfflineManagerModal } from './components/OfflineManagerModal';
 import { BookDetailModal } from './components/BookDetailModal';
 import { GenreView } from './components/GenreView';
 import { AppLogo } from './components/AppLogo';
+import { OnboardingView } from './components/OnboardingView';
 import { getAllOfflineBooks, isBookOfflineReady } from './utils/offlineStorage';
 import { resolveFullTracklist, LIBRIVOX_GENRES } from './utils/librivoxRecommendations';
 import { GenreCategory } from './utils/librivoxRecommendations';
@@ -42,15 +44,21 @@ import {
   BarChart3,
 } from 'lucide-react';
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'explore' | 'search' | 'library' | 'stats' | 'settings'>('explore');
+  const [activeTab, setActiveTab] = useState<'explore' | 'search' | 'library'>('explore');
+  const [showProfileDrawer, setShowProfileDrawer] = useState(false);
+  const [showProfileStats, setShowProfileStats] = useState(false);
+  const [showProfileSettings, setShowProfileSettings] = useState(false);
   const [showFullPlayer, setShowFullPlayer] = useState(false);
   const [showEbookReader, setShowEbookReader] = useState(false);
-  const [readingBook, setReadingBook] = useState<Audiobook | null>(INITIAL_AUDIOBOOKS[0]);
+  const [readingBook, setReadingBook] = useState<Audiobook | null>(null);
   const [catalog, setCatalog] = useState<Audiobook[]>(INITIAL_AUDIOBOOKS);
   const [isLoadingFeed, setIsLoadingFeed] = useState(false);
 
   // App intro splash animation state
   const [showIntro, setShowIntro] = useState(true);
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    return !localStorage.getItem('libriaudio_onboarded');
+  });
 
   // Modals for playback & storage features
   const [showSleepTimerModal, setShowSleepTimerModal] = useState(false);
@@ -95,26 +103,26 @@ export default function App() {
   const loadedInitialState = loadState();
 
   // Restore last-played book and position from localStorage
-  const restoredBook = loadedInitialState.currentBook || loadedInitialState.history[0] || INITIAL_AUDIOBOOKS[0];
+  const restoredBook = loadedInitialState.currentBook || loadedInitialState.history[0] || null;
   const restoredTrackIndex = loadedInitialState.currentTrackIndex || 0;
   const savedPosition = restoredBook ? getAudiobookPosition(restoredBook.id) : null;
   const restoredTime = savedPosition?.currentTime || 0;
   const restoredTrackIdx = savedPosition?.trackIndex ?? restoredTrackIndex;
-  const configuredBook = applyQualityToAudiobook(restoredBook);
+  const configuredBook = restoredBook ? applyQualityToAudiobook(restoredBook) : null;
 
   // Player State
   const [playerState, setPlayerState] = useState<PlayerState>({
     currentBook: configuredBook,
-    currentTrack: configuredBook.tracks[restoredTrackIdx] || configuredBook.tracks[0] || null,
-    currentTrackIndex: restoredTrackIdx,
+    currentTrack: configuredBook ? (configuredBook.tracks[restoredTrackIdx] || configuredBook.tracks[0] || null) : null,
+    currentTrackIndex: restoredTrackIndex,
     isPlaying: false,
     isBuffering: false,
     currentTime: restoredTime,
-    duration: (configuredBook.tracks[restoredTrackIdx] || configuredBook.tracks[0])?.durationSeconds || configuredBook.totalTimeSecs || 1800,
+    duration: configuredBook ? ((configuredBook.tracks[restoredTrackIdx] || configuredBook.tracks[0])?.durationSeconds || configuredBook.totalTimeSecs || 1800) : 0,
     playbackSpeed: loadedInitialState.playbackSpeed || 1.0,
     volume: parseFloat(localStorage.getItem('libriaudio_volume') || '1'),
     isMuted: localStorage.getItem('libriaudio_muted') === 'true',
-    history: loadedInitialState.history.length > 0 ? loadedInitialState.history : [configuredBook],
+    history: loadedInitialState.history.length > 0 ? loadedInitialState.history : (configuredBook ? [configuredBook] : []),
     savedBooks: loadedInitialState.savedBooks,
     bookmarks: loadedInitialState.bookmarks,
     sleepTimer: {
@@ -144,7 +152,10 @@ export default function App() {
 
   // Intro splash animation — auto-dismiss after a short delay
   useEffect(() => {
-    const timer = setTimeout(() => setShowIntro(false), 2300);
+    const timer = setTimeout(() => {
+      setShowIntro(false);
+      // If user hasn't completed onboarding, it will show automatically
+    }, 2300);
     return () => clearTimeout(timer);
   }, []);
 
@@ -203,6 +214,12 @@ export default function App() {
             setShowEbookReader(false);
           } else if (showFullPlayer) {
             setShowFullPlayer(false);
+          } else if (showProfileDrawer) {
+            setShowProfileDrawer(false);
+          } else if (showProfileStats) {
+            setShowProfileStats(false);
+          } else if (showProfileSettings) {
+            setShowProfileSettings(false);
           } else if (activeTab !== 'explore') {
             setActiveTab('explore');
           } else {
@@ -217,7 +234,7 @@ export default function App() {
 
     setupBackButton();
     return () => { cleanup?.(); };
-  }, [showGenreView, showBookDetailModal, showOfflineManagerModal, showCarModeModal, showBookmarksModal, showVoiceEnhancerModal, showSleepTimerModal, showEbookReader, showFullPlayer, activeTab]);
+  }, [showGenreView, showBookDetailModal, showOfflineManagerModal, showCarModeModal, showBookmarksModal, showVoiceEnhancerModal, showSleepTimerModal, showEbookReader, showFullPlayer, showProfileDrawer, showProfileStats, showProfileSettings, activeTab]);
 
   // Save state
   useEffect(() => {
@@ -643,6 +660,17 @@ export default function App() {
         </div>
       )}
 
+      {/* Onboarding (first launch only) */}
+      {!showIntro && showOnboarding && (
+        <OnboardingView
+          onComplete={(name) => {
+            localStorage.setItem('libriaudio_profile_name', name);
+            localStorage.setItem('libriaudio_onboarded', '1');
+            setShowOnboarding(false);
+          }}
+        />
+      )}
+
       {/* Background Audio Engine */}
       <AudioEngine
         playerState={playerState}
@@ -709,7 +737,6 @@ export default function App() {
       {/* Main Content Viewport */}
       <main className="flex-1 relative overflow-hidden bg-[var(--bg)] flex flex-col">
         <div
-          key={activeTab}
           className={`flex-1 ${
             activeTab === 'search'
               ? 'overflow-hidden pt-[max(env(safe-area-inset-top),1.5rem)] flex flex-col'
@@ -731,6 +758,7 @@ export default function App() {
                     onUploadEpub={handleUploadEpub}
                     isLoading={isLoadingFeed}
                     onRefresh={handleRefreshFeed}
+                    onOpenProfile={() => setShowProfileDrawer(true)}
                   />
                 </div>
               )}
@@ -742,6 +770,7 @@ export default function App() {
                     onReadBook={handleOpenEbookReader}
                     onUploadEpub={handleUploadEpub}
                     onOpenGenre={handleOpenGenre}
+                    onOpenProfile={() => setShowProfileDrawer(true)}
                   />
                 </div>
               )}
@@ -761,27 +790,16 @@ export default function App() {
                     onJumpToBookmark={handleJumpToBookmark}
                     onOpenOfflineManager={() => setShowOfflineManagerModal(true)}
                     onUploadEpub={handleUploadEpub}
+                    onOpenProfile={() => setShowProfileDrawer(true)}
                   />
                 </div>
-              )}
-              {activeTab === 'stats' && (
-                <div className="max-w-4xl mx-auto w-full p-4 md:p-8">
-                  <StatsView
-                    history={playerState.history}
-                    onSelectBook={handleOpenBookDetails}
-                    onPlayBook={(book) => handleSelectBook(book, 0)}
-                  />
-                </div>
-              )}
-              {activeTab === 'settings' && (
-                <SettingsView onUploadEpub={handleUploadEpub} />
               )}
             </>
           )}
         </div>
 
         {/* Floating Bottom Mini Player Widget (overlay, transparent around the card) */}
-        <div className="fixed left-0 right-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] px-4 md:px-8 z-30 pointer-events-none">
+        <div className="fixed left-0 right-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] px-4 md:px-8 z-30 pointer-events-none">
           <div className="max-w-6xl mx-auto pointer-events-auto">
             <MiniPlayerWidget
               playerState={playerState}
@@ -794,7 +812,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* Sleek Bottom Navigation Bar (Explore, Search, Library, Stats, Settings) */}
+        {/* Sleek Bottom Navigation Bar (Explore, Search, Library) */}
         <div className="shrink-0 bg-[var(--bg)] border-t border-[var(--border-subtle)] z-20 w-full pb-[env(safe-area-inset-bottom)]">
           <nav
             id="app-bottom-nav"
@@ -840,34 +858,6 @@ export default function App() {
               aria-label="Library"
             >
               <Bookmark className="w-5 h-5 stroke-[2.2]" />
-            </button>
-
-            <button
-              id="bottom-tab-stats"
-              onClick={() => setActiveTab('stats')}
-              className={`flex items-center justify-center w-12 sm:w-14 h-10 rounded-2xl transition-all duration-200 ${
-                activeTab === 'stats'
-                  ? 'bg-[var(--accent)] text-[var(--on-accent)] shadow-lg shadow-[rgba(var(--accent-rgb),0.3)] scale-105'
-                  : 'text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
-              }`}
-              title="Stats & Author Rankings"
-              aria-label="Stats"
-            >
-              <BarChart3 className="w-5 h-5 stroke-[2.2]" />
-            </button>
-
-            <button
-              id="bottom-tab-settings"
-              onClick={() => setActiveTab('settings')}
-              className={`flex items-center justify-center w-12 sm:w-14 h-10 rounded-2xl transition-all duration-200 ${
-                activeTab === 'settings'
-                  ? 'bg-[var(--accent)] text-[var(--on-accent)] shadow-lg shadow-[rgba(var(--accent-rgb),0.3)] scale-105'
-                  : 'text-[var(--text-dim)] hover:text-[var(--text-main)] hover:bg-[var(--surface-raised)]'
-              }`}
-              title="Settings & Preferences"
-              aria-label="Settings"
-            >
-              <Settings className="w-5 h-5 stroke-[2.2]" />
             </button>
           </nav>
         </div>
@@ -1009,6 +999,43 @@ export default function App() {
               : false
           }
         />
+      )}
+
+      {/* Profile Drawer */}
+      <ProfileDrawer
+        isOpen={showProfileDrawer}
+        onClose={() => setShowProfileDrawer(false)}
+        playerState={playerState}
+        onOpenStats={() => {
+          setShowProfileDrawer(false);
+          setShowProfileStats(true);
+        }}
+        onOpenSettings={() => {
+          setShowProfileDrawer(false);
+          setShowProfileSettings(true);
+        }}
+      />
+
+      {/* Stats overlay (from profile drawer) */}
+      {showProfileStats && (
+        <div className="fixed inset-0 z-[90] bg-[var(--bg)] animate-in fade-in slide-in-from-left-4 duration-300">
+          <div className="h-full overflow-y-auto pt-[max(env(safe-area-inset-top),1rem)] pb-36">
+            <StatsView
+              history={playerState.history}
+              onSelectBook={handleOpenBookDetails}
+              onPlayBook={(book) => handleSelectBook(book, 0)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Settings overlay (from profile drawer) */}
+      {showProfileSettings && (
+        <div className="fixed inset-0 z-[90] bg-[var(--bg)] animate-in fade-in slide-in-from-left-4 duration-300">
+          <div className="h-full overflow-y-auto pt-[max(env(safe-area-inset-top),1rem)] pb-36">
+            <SettingsView onUploadEpub={handleUploadEpub} />
+          </div>
+        </div>
       )}
     </div>
   );

@@ -42,6 +42,7 @@ import {
   getSavedQualityPreference,
   saveQualityPreference,
 } from '../utils/audioQualityManager';
+import { useCoverAspect, getCoverAspectClass } from '../utils/coverAspect';
 
 interface BookDetailModalProps {
   isOpen: boolean;
@@ -72,6 +73,8 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
   const [showChapterDownloadModal, setShowChapterDownloadModal] = useState(false);
   const [showNotesModal, setShowNotesModal] = useState(false);
   const [bookNotes, setBookNotes] = useState<BookNote[]>([]);
+
+  const coverAspectClass = getCoverAspectClass(useCoverAspect());
 
   const [downloadSummary, setDownloadSummary] = useState<{
     isFullyDownloaded: boolean;
@@ -250,7 +253,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 sm:gap-6 bg-[var(--surface-raised)] p-5 rounded-2xl border border-[var(--border-subtle)]">
               {/* Book Cover Artwork */}
               <div
-                className="relative w-32 sm:w-36 aspect-[3/4] shrink-0 rounded-xl overflow-hidden shadow-2xl shadow-black border border-[var(--border-subtle)] bg-[var(--surface-raised)]"
+                className={`relative w-32 sm:w-36 ${coverAspectClass} shrink-0 rounded-xl overflow-hidden shadow-2xl shadow-black border border-[var(--border-subtle)] bg-[var(--surface-raised)]`}
               >
                 <img
                   src={currentActiveBook.coverImageUrl}

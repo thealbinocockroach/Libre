@@ -55,7 +55,7 @@ export const VoiceEnhancerModal: React.FC<VoiceEnhancerModalProps> = ({
     {
       id: 'off',
       title: 'Bypass (Natural Studio)',
-      description: 'Direct unfiltered flat master output without Web Audio equalization.',
+      description: 'Direct unfiltered flat master output without equalization.',
       tag: 'Flat Standard',
       curve: [40, 40, 40, 40, 40, 40],
     },
@@ -78,9 +78,6 @@ export const VoiceEnhancerModal: React.FC<VoiceEnhancerModalProps> = ({
                 <h3 className="text-base font-serif-display font-semibold italic text-[var(--text-main)]">
                   Vocal Equalizer & Clarity
                 </h3>
-                <span className="text-[9px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded bg-[var(--accent-dim)] text-[var(--accent)]">
-                  Web Audio EQ
-                </span>
               </div>
               <p className="text-[11px] text-[var(--text-dim)]">Engineered specifically for LibriVox recordings</p>
             </div>

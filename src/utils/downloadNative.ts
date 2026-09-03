@@ -2,7 +2,6 @@ import { registerPlugin } from '@capacitor/core';
 import { Audiobook } from '../types';
 import { resolveFullTracklist } from './librivoxRecommendations';
 import {
-  saveNativeTrack,
   finalizeNativeBook,
   getBookDownloadSummary,
   NativeTrackPayload,
@@ -56,17 +55,6 @@ interface DownloadPluginDef {
 }
 
 const Download = registerPlugin<DownloadPluginDef>('Download');
-
-function base64ToBlob(b64: string, mime = 'audio/mpeg'): Blob {
-  try {
-    const bin = atob(b64);
-    const arr = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-    return new Blob([arr], { type: mime });
-  } catch {
-    return new Blob();
-  }
-}
 
 /**
  * Ask for notification permission (Android 13+). Safe no-op elsewhere.
@@ -140,27 +128,9 @@ export async function downloadBookNative(
     listeners.push(onProgress);
 
     const onTrackReady = await Download.addListener('trackReady', async (e: TrackReadyEvent) => {
-      try {
-        const payload: NativeTrackPayload = {
-          audioUrl: '',
-          trackId: e.trackId || e.trackKey,
-          trackKey: e.trackKey,
-          trackNumber: e.trackNumber || 0,
-          title: e.title || '',
-          durationSeconds: e.durationSeconds || 0,
-        };
-        const { base64 } = await Download.readTrack({
-          filePath: e.filePath,
-          deleteAfter: true,
-        });
-        if (!base64) return;
-        const blob = base64ToBlob(base64);
-        if (blob.size > 0) {
-          await saveNativeTrack(active, payload, blob, lastPercent);
-        }
-      } catch (err) {
-        console.warn('Failed to persist native track:', err);
-      }
+      // Files are already saved to disk by the native DownloadService.
+      // No need to read them back as base64 — the downloadComplete handler
+      // will check disk via getBookDownloadSummary().
     });
     listeners.push(onTrackReady);
 

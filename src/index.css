@@ -9,6 +9,7 @@
   --accent: #C5A059;
   --accent-hover: #d4af65;
   --accent-dim: rgba(197, 160, 89, 0.15);
+  --accent-rgb: 197, 160, 89;
   --text-main: #EFEFEF;
   --text-dim: #888888;
   --border-subtle: rgba(255, 255, 255, 0.08);
@@ -53,6 +54,11 @@
   background: linear-gradient(90deg, transparent, currentColor, transparent);
   background-size: 200% 100%;
   animation: introShimmer 1.4s linear infinite;
+}
+
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 body {
@@ -175,56 +181,177 @@ article.prose figcaption {
   display: none !important;
 }
 
-/* Ebook Reader: text selection must stay visible after the finger lifts.
-   Native Android WebView selection handles keep the highlight up; these rules
-   make sure the selection tint is never lost while our floating toolbar is open. */
+/* Ebook Reader: native selection enabled. Context menu handled via
+   selectionchange and pointer events in the component. */
 #reader-content-scroll {
   -webkit-tap-highlight-color: transparent;
 }
+
+#reader-content-scroll article {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 #reader-content-scroll ::selection {
-  background: rgba(197, 160, 89, 0.45);
+  background: rgba(59, 130, 246, 0.35);
   color: inherit;
-  -webkit-tap-highlight-color: rgba(197, 160, 89, 0.45);
-}
-#reader-content-scroll *::selection {
-  background: rgba(197, 160, 89, 0.45);
-  color: inherit;
-}
-#reader-content-scroll .libriaudio-sel-hold ::selection,
-#reader-content-scroll .libriaudio-sel-hold *::selection {
-  background: rgba(197, 160, 89, 0.5) !important;
 }
 
-/* Custom (Moon+ style) selection overlay — drawn entirely in JS, independent of
-   the WebView's native selection. */
-.libriaudio-active-sel {
-  position: absolute;
-  background: rgba(197, 160, 89, 0.4);
+/* Selection highlight for persisted annotation marks */
+#reader-content-scroll .reader-selection-highlight {
+  background: rgba(197, 160, 89, 0.45);
+  color: inherit;
   border-radius: 2px;
-  display: block;
 }
 
-.libriaudio-sel-handle {
-  position: fixed;
-  width: 22px;
-  height: 22px;
-  border-radius: 9999px;
-  background: #fff;
-  border: 2px solid #c5a059;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-  z-index: 9999;
-  cursor: pointer;
-  touch-action: none;
-  pointer-events: auto;
+/* Reader Selection Floating Menu */
+#reader-floating-selection-menu {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
 }
-.libriaudio-sel-handle::after {
+
+/* Selection handle — teardrop / lollipop at the edge of native selection */
+.reader-select-handle {
+  position: fixed;
+  width: 44px;
+  height: 48px;
+  z-index: 90;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: translate(-50%, 0);
+  transition: transform 0.08s cubic-bezier(0.2, 0.9, 0.3, 1), opacity 0.15s ease;
+}
+
+.reader-select-handle-start {
+  transform: translate(-50%, 0);
+}
+
+.reader-select-handle-end {
+  transform: translate(-50%, 0);
+}
+
+.reader-select-handle:active,
+.reader-select-handle.dragging {
+  cursor: grabbing;
+  z-index: 95;
+  transform: translate(-50%, 0) scale(1.16);
+  pointer-events: none !important;
+}
+
+.reader-select-handle-start:active,
+.reader-select-handle-start.dragging,
+.reader-select-handle-end:active,
+.reader-select-handle-end.dragging {
+  transform: translate(-50%, 0) scale(1.16);
+}
+
+/* Start handle: stem connects to bottom of selection, bulb hangs down */
+.reader-select-handle-start::before {
   content: '';
   position: absolute;
+  top: 14px;
   left: 50%;
-  top: 50%;
-  width: 8px;
-  height: 8px;
-  transform: translate(-50%, -50%);
-  border-radius: 9999px;
-  background: #c5a059;
+  transform: translateX(-50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent, #C5A059);
+  border: 2.5px solid #FFFFFF;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45), 0 0 10px rgba(197, 160, 89, 0.4);
+  pointer-events: none;
 }
+
+.reader-select-handle-start::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  height: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2.5px;
+  background: var(--accent, #C5A059);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+/* End handle: stem connects to bottom of selection, bulb hangs down */
+.reader-select-handle-end::before {
+  content: '';
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent, #C5A059);
+  border: 2.5px solid #FFFFFF;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45), 0 0 10px rgba(197, 160, 89, 0.4);
+  pointer-events: none;
+}
+
+.reader-select-handle-end::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  height: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2.5px;
+  background: var(--accent, #C5A059);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+/* ── Mini Player Dynamic Lighting ─────────────────────── */
+@keyframes mini-lighting-pulse {
+  0%, 100% {
+    opacity: 0.70;
+    transform: scale(0.995);
+    filter: blur(20px);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.025);
+    filter: blur(28px);
+  }
+}
+
+@keyframes mini-lighting-breathe {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(0.998);
+    filter: blur(16px);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(1.012);
+    filter: blur(22px);
+  }
+}
+
+/* Ambient glow field rendered behind the mini player card */
+.mini-lighting-halo {
+  pointer-events: none;
+  will-change: transform, opacity, filter;
+}
+
+/* Idle (paused) breath — subtle halo */
+.mini-lighting-idle {
+  animation: mini-lighting-breathe 4s ease-in-out infinite;
+}
+
+/* Playing — animated pulse in the dynamic color */
+.mini-lighting-active {
+  animation: mini-lighting-pulse 2.2s ease-in-out infinite;
+}
+
+

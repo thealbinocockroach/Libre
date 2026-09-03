@@ -6,7 +6,10 @@ import android.view.ActionMode;
 import com.getcapacitor.CapacitorWebView;
 
 /**
- * A CapacitorWebView that allows native text-selection ActionMode.
+ * A CapacitorWebView that suppresses Android's native text-selection ActionMode
+ * (the system Copy / Share toolbar). The WebView's native selection highlight
+ * and drag handles are kept; only the floating toolbar is blocked so the host
+ * can draw its own custom selection menu.
  */
 public class SelectionBlockingWebView extends CapacitorWebView {
 
@@ -17,11 +20,11 @@ public class SelectionBlockingWebView extends CapacitorWebView {
     @Override
     @SuppressWarnings("deprecation")
     public ActionMode startActionMode(ActionMode.Callback callback) {
-        return super.startActionMode(callback);
+        return null;
     }
 
     @Override
     public ActionMode startActionMode(ActionMode.Callback callback, int type) {
-        return super.startActionMode(callback, type);
+        return null;
     }
 }

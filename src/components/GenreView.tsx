@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Audiobook } from '../types';
 import { X, Play, BookOpen, Clock, Sparkles } from 'lucide-react';
 import { GenreCategory, fetchLibriVoxCategory } from '../utils/librivoxRecommendations';
+import { useCoverAspect, getCoverAspectClass } from '../utils/coverAspect';
 
 interface GenreViewProps {
   genre: GenreCategory | null;
@@ -21,6 +22,8 @@ export const GenreView: React.FC<GenreViewProps> = ({
   const [books, setBooks] = useState<Audiobook[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const coverAspectClass = getCoverAspectClass(useCoverAspect());
 
   useEffect(() => {
     if (!open || !genre) return;
@@ -115,7 +118,7 @@ export const GenreView: React.FC<GenreViewProps> = ({
         {isLoading ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3.5">
             {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="aspect-[3/4] bg-[var(--surface-raised)] rounded-2xl animate-pulse" />
+              <div key={i} className={`${coverAspectClass} bg-[var(--surface-raised)] rounded-2xl animate-pulse`} />
             ))}
           </div>
         ) : error && books.length === 0 ? (
@@ -141,7 +144,7 @@ export const GenreView: React.FC<GenreViewProps> = ({
                 onClick={() => handleBookClick(book)}
                 className="group flex flex-col bg-[var(--surface)] rounded-2xl border border-[var(--border-subtle)] p-3 hover:border-[var(--accent)] hover:bg-[var(--surface-raised)] transition-all duration-200 cursor-pointer shadow-md active:scale-[0.97]"
               >
-                <div className="relative aspect-[3/4] w-full rounded-xl overflow-hidden mb-2.5 bg-[var(--surface-raised)] border border-[var(--border-subtle)]">
+                <div className={`relative ${coverAspectClass} w-full rounded-xl overflow-hidden mb-2.5 bg-[var(--surface-raised)] border border-[var(--border-subtle)]`}>
                   <img
                     src={book.coverImageUrl}
                     alt={book.title}

@@ -24,6 +24,7 @@ export interface AudioPlaybackPluginDef {
   seekTo(options: { position: number }): Promise<void>;
   setPlaybackRate(options: { rate: number }): Promise<void>;
   setVolume(options: { volume: number }): Promise<void>;
+  setEqualizer(options: { preset: string }): Promise<void>;
   stop(): Promise<void>;
   getPosition(): Promise<{ position: number; duration: number; isPlaying: boolean }>;
   addListener(

@@ -24,6 +24,7 @@ import {
   CheckCircle2,
   History as HistoryIcon,
   Sparkles,
+  User,
 } from 'lucide-react';
 import {
   formatBytes,
@@ -45,6 +46,7 @@ import {
   SyncLegendBar,
   getBookSyncStatus,
 } from './SyncStatusBadge';
+import { useCoverAspect, getCoverAspectClass } from '../utils/coverAspect';
 
 interface LibraryViewProps {
   history: Audiobook[];
@@ -60,6 +62,7 @@ interface LibraryViewProps {
   onJumpToBookmark: (bm: BookmarkType) => void;
   onOpenOfflineManager: () => void;
   onUploadEpub?: (book: Audiobook) => void;
+  onOpenProfile?: () => void;
 }
 
 export const LibraryView: React.FC<LibraryViewProps> = ({
@@ -75,6 +78,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   onDeleteBookmark,
   onJumpToBookmark,
   onOpenOfflineManager,
+  onOpenProfile,
 }) => {
   const [tab, setTab] = useState<'reading' | 'read' | 'unread' | 'offline' | 'history' | 'bookmarks'>('reading');
   const [historySubTab, setHistorySubTab] = useState<'reading' | 'audio'>('reading');
@@ -83,6 +87,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   const [offlineSubTab, setOfflineSubTab] = useState<'audiobooks' | 'ebooks'>('audiobooks');
   const [offlineEbooks, setOfflineEbooks] = useState<any[]>([]);
   const [readingSessions, setReadingSessions] = useState<any[]>([]);
+
+  const coverAspectClass = getCoverAspectClass(useCoverAspect());
 
   const toggleSelect = (bookId: string) => {
     const newSelected = new Set(selectedIds);
@@ -303,16 +309,15 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   return (
     <div id="library-view-container" className="w-full pb-16 text-[var(--text-main)]">
       <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-xl font-serif-display italic font-bold text-[var(--text-main)] tracking-wide">
-            Your Library
-          </h1>
-          <p className="text-xs text-[var(--text-dim)] font-serif-display italic mt-0.5">
-            Saved audiobooks and offline sync storage
-          </p>
-        </div>
         <div className="flex items-center gap-2">
-          {/* Download Manager Launcher */}
+          <button
+            id="btn-profile-library"
+            onClick={onOpenProfile}
+            className="w-9 h-9 rounded-full bg-[var(--surface)] border border-[var(--border-subtle)] hover:border-[var(--accent)] flex items-center justify-center text-[var(--text-dim)] hover:text-[var(--accent)] transition-all shrink-0"
+            aria-label="Profile menu"
+          >
+            <User className="w-4 h-4" />
+          </button>
           <button
             id="btn-open-storage-manager"
             onClick={onOpenOfflineManager}
@@ -320,13 +325,23 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             title="Open Offline Download Manager"
           >
             <HardDrive className="w-3.5 h-3.5 text-[var(--accent)]" />
-            <span>Download Manager</span>
+            <span>Downloads</span>
             {readyOffline.length > 0 && (
               <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-[var(--accent)] text-[var(--on-accent)] text-[10px] font-mono font-bold">
                 {readyOffline.length}
               </span>
             )}
           </button>
+        </div>
+        <div className="flex items-center gap-2">
+          <div>
+            <h1 className="text-xl font-serif-display italic font-bold text-[var(--text-main)] tracking-wide text-right">
+              Your Library
+            </h1>
+            <p className="text-xs text-[var(--text-dim)] font-serif-display italic mt-0.5 text-right">
+              Saved audiobooks and offline sync storage
+            </p>
+          </div>
           {storageUsed && (
             <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] text-xs text-[var(--text-dim)]">
               <HardDrive className="w-3.5 h-3.5 text-[var(--accent)]" />
@@ -425,7 +440,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               onClick={() => onSelectBook(book)}
               className="flex items-center gap-3 p-2.5 rounded-2xl bg-[var(--surface)] border border-[var(--border-subtle)] hover:border-[var(--accent)] hover:bg-[var(--surface-raised)] transition-all cursor-pointer"
             >
-              <img src={book.coverImageUrl} alt={book.title} className="w-12 h-16 rounded-lg object-cover" />
+              <img src={book.coverImageUrl} alt={book.title} className={`w-12 ${coverAspectClass} rounded-lg object-cover`} />
               <div className="flex-1">
                 <h4 className="text-sm font-medium text-[var(--text-main)] flex items-center flex-wrap">{book.title}<OfflineBadge book={book} /></h4>
                 <p className="text-xs text-[var(--text-dim)]">{book.author}</p>
@@ -444,7 +459,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               onClick={() => onSelectBook(book)}
               className="flex items-center gap-3 p-2.5 rounded-2xl bg-[var(--surface)] border border-[var(--border-subtle)] hover:border-[var(--accent)] hover:bg-[var(--surface-raised)] transition-all cursor-pointer"
             >
-              <img src={book.coverImageUrl} alt={book.title} className="w-12 h-16 rounded-lg object-cover" />
+              <img src={book.coverImageUrl} alt={book.title} className={`w-12 ${coverAspectClass} rounded-lg object-cover`} />
               <div className="flex-1">
                 <h4 className="text-sm font-medium text-[var(--text-main)] flex items-center flex-wrap">{book.title}<OfflineBadge book={book} /></h4>
                 <p className="text-xs text-[var(--text-dim)]">{book.author}</p>
@@ -463,7 +478,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               onClick={() => onSelectBook(book)}
               className="flex items-center gap-3 p-2.5 rounded-2xl bg-[var(--surface)] border border-[var(--border-subtle)] hover:border-[var(--accent)] hover:bg-[var(--surface-raised)] transition-all cursor-pointer"
             >
-              <img src={book.coverImageUrl} alt={book.title} className="w-12 h-16 rounded-lg object-cover" />
+              <img src={book.coverImageUrl} alt={book.title} className={`w-12 ${coverAspectClass} rounded-lg object-cover`} />
               <div className="flex-1">
                 <h4 className="text-sm font-medium text-[var(--text-main)] flex items-center flex-wrap">{book.title}<OfflineBadge book={book} /></h4>
                 <p className="text-xs text-[var(--text-dim)]">{book.author}</p>
@@ -570,7 +585,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                         </div>
                       )}
                       {/* Book Cover with Visual Sync Status Overlay Badge */}
-                      <div className="relative shrink-0 w-12 h-16 sm:w-14 sm:h-20 rounded-xl overflow-hidden bg-[var(--surface)] border border-[var(--border-subtle)] shadow-sm group-hover:border-[var(--accent)] transition-colors">
+                      <div className={`relative shrink-0 w-12 sm:w-14 ${coverAspectClass} rounded-xl overflow-hidden bg-[var(--surface)] border border-[var(--border-subtle)] shadow-sm group-hover:border-[var(--accent)] transition-colors`}>
                         <img
                           src={item.book.coverImageUrl}
                           alt={item.book.title}
@@ -655,7 +670,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                       onClick={() => onReadBook && onReadBook(reconstructedBook)}
                       className="flex items-center gap-3 p-2.5 rounded-2xl bg-[var(--surface)] border border-[var(--border-subtle)] hover:border-[var(--accent)] hover:bg-[var(--surface-raised)] transition-all cursor-pointer group"
                     >
-                      <div className="relative shrink-0 w-12 h-16 sm:w-14 sm:h-20 rounded-xl overflow-hidden bg-[var(--surface)] border border-[var(--border-subtle)] shadow-sm group-hover:border-[var(--accent)] transition-colors">
+                      <div className={`relative shrink-0 w-12 sm:w-14 ${coverAspectClass} rounded-xl overflow-hidden bg-[var(--surface)] border border-[var(--border-subtle)] shadow-sm group-hover:border-[var(--accent)] transition-colors`}>
                         <img
                           src={ebook.coverImageUrl}
                           alt={ebook.title}
@@ -802,7 +817,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                       id={`reading-session-${session.id}`}
                       className="flex items-center gap-3 p-2.5 rounded-2xl bg-[var(--surface)] border border-[var(--border-subtle)] hover:border-[var(--accent)] hover:bg-[var(--surface-raised)] transition-all group"
                     >
-                      <div className="relative shrink-0 w-12 h-16 sm:w-14 sm:h-20 rounded-xl overflow-hidden bg-[var(--surface)] border border-[var(--border-subtle)] shadow-sm group-hover:border-[var(--accent)] transition-colors">
+                      <div className={`relative shrink-0 w-12 sm:w-14 ${coverAspectClass} rounded-xl overflow-hidden bg-[var(--surface)] border border-[var(--border-subtle)] shadow-sm group-hover:border-[var(--accent)] transition-colors`}>
                         <img
                           src={session.coverImageUrl}
                           alt={session.bookTitle}
@@ -875,7 +890,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                       className="flex items-center gap-3 p-2.5 rounded-2xl bg-[var(--surface)] border border-[var(--border-subtle)] hover:border-[var(--accent)] hover:bg-[var(--surface-raised)] transition-all cursor-pointer group"
                     >
                       {/* Book Cover with Visual Sync Status Overlay Badge */}
-                      <div className="relative shrink-0 w-12 h-16 sm:w-14 sm:h-20 rounded-xl overflow-hidden bg-[var(--surface)] border border-[var(--border-subtle)] shadow-sm group-hover:border-[var(--accent)] transition-colors">
+                      <div className={`relative shrink-0 w-12 sm:w-14 ${coverAspectClass} rounded-xl overflow-hidden bg-[var(--surface)] border border-[var(--border-subtle)] shadow-sm group-hover:border-[var(--accent)] transition-colors`}>
                         <img
                           src={book.coverImageUrl}
                           alt={book.title}

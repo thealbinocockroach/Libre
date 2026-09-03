@@ -4,10 +4,10 @@ import {
   Play,
   BookOpen,
   RefreshCw,
-  Shuffle,
   ChevronRight,
   ChevronLeft,
   Radio,
+  User,
 } from 'lucide-react';
 import {
   RecommendationSection,
@@ -17,6 +17,7 @@ import {
   getContinueListeningBook,
 } from '../utils/librivoxRecommendations';
 import { isBookDownloaded } from '../utils/offlineStorage';
+import { useCoverAspect, getCoverAspectClass } from '../utils/coverAspect';
 
 function formatRemaining(secs: number): string {
   const s = Math.max(0, Math.floor(secs));
@@ -35,6 +36,7 @@ interface ExploreViewProps {
   onRefresh: () => void;
   onReadBook?: (book: Audiobook) => void;
   onUploadEpub?: (book: Audiobook) => void;
+  onOpenProfile?: () => void;
 }
 
 export const ExploreView: React.FC<ExploreViewProps> = ({
@@ -46,14 +48,15 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   onRefresh,
   onReadBook,
   onUploadEpub,
+  onOpenProfile,
 }) => {
   const [dynamicSections, setDynamicSections] = useState<RecommendationSection[]>([]);
   const [isLoadingSections, setIsLoadingSections] = useState(false);
-  const [surpriseBook, setSurpriseBook] = useState<Audiobook | null>(null);
-  const [isRollingSurprise, setIsRollingSurprise] = useState(false);
   const [profileName, setProfileName] = useState<string>('');
   const [downloadedStatusMap, setDownloadedStatusMap] = useState<Record<string, boolean>>({});
-  const [refreshTick, setRefreshTick] = useState(0);
+
+  const coverAspect = useCoverAspect();
+  const coverAspectClass = getCoverAspectClass(coverAspect);
 
   const continueResult = React.useMemo(
     () => getContinueListeningBook(currentBook, history),
@@ -117,13 +120,11 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [currentBook?.id, history.length, savedBooks.length, refreshTick]);
+  }, [currentBook?.id, history.length, savedBooks.length]);
 
   // Genres now live on the Search tab (Spotify-style genre view).
 
   const handleRefresh = () => {
-    setSurpriseBook(null);
-    setRefreshTick((t) => t + 1);
     onRefresh();
   };
 
@@ -135,38 +136,6 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [continueResult, readBooks]);
 
-  const handleSurpriseMe = async () => {
-    setIsRollingSurprise(true);
-    const surpriseQueries = [
-      'dumas OR "count of monte cristo"',
-      'verne OR "twenty thousand leagues"',
-      'wilde OR "dorian gray"',
-      'poe OR "raven"',
-      'shelley OR "frankenstein"',
-      'wells OR "war of the worlds"',
-      'stoker OR "dracula"',
-      'austen OR "pride and prejudice"',
-      'tolstoy OR "war and peace"',
-      'kafka OR "metamorphosis"',
-      'melville OR "moby dick"',
-      'kipling OR "jungle book"',
-    ];
-    const randomQuery = surpriseQueries[Math.floor(Math.random() * surpriseQueries.length)];
-
-    try {
-      const results = await fetchLibriVoxCategory(randomQuery, 4);
-      if (results && results.length > 0) {
-        const picked = results[Math.floor(Math.random() * results.length)];
-        const resolved = await resolveFullTracklist(picked);
-        setSurpriseBook(resolved);
-      }
-    } catch (e) {
-      console.warn('Surprise pick error:', e);
-    } finally {
-      setIsRollingSurprise(false);
-    }
-  };
-
   const handleBookClick = (book: Audiobook) => {
     // Open the book page immediately; BookDetailModal resolves the full
     // tracklist itself and shows its skeleton while loading.
@@ -176,47 +145,21 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   return (
     <div id="explore-view-container" className="w-full pb-24 text-[var(--text-main)]">
       {/* Header Bar */}
-      <div id="explore-header" className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
-        <div>
-          <div className="flex items-center gap-2">
+      <div id="explore-header" className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-3">
+          <button
+            id="btn-profile-explore"
+            onClick={onOpenProfile}
+            className="w-9 h-9 rounded-full bg-[var(--surface)] border border-[var(--border-subtle)] hover:border-[var(--accent)] flex items-center justify-center text-[var(--text-dim)] hover:text-[var(--accent)] transition-all shrink-0"
+            aria-label="Profile menu"
+          >
+            <User className="w-4 h-4" />
+          </button>
+          <div>
             <h1 className="text-xl font-serif-display italic font-bold text-[var(--text-main)] tracking-wide leading-tight">
               {profileName ? `${getGreeting()}, ${profileName}` : 'LibriAudio Discover'}
             </h1>
-            {!profileName && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] uppercase font-bold tracking-widest bg-[var(--accent-dim)] text-[var(--accent)] border border-[var(--accent)]">
-                <Radio className="w-2.5 h-2.5 animate-pulse text-[var(--accent)]" /> LibriVox Live
-              </span>
-            )}
           </div>
-          <p className="text-xs text-[var(--text-dim)] font-serif-display italic mt-0.5">
-            {profileName
-              ? 'Dynamic recommendations curated from the LibriVox and Internet Archive catalog'
-              : 'Public domain audiobooks and offline EPUB reader'}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Surprise Me Button */}
-          <button
-            id="btn-surprise-gem"
-            onClick={handleSurpriseMe}
-            disabled={isRollingSurprise}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[var(--surface-raised)] hover:bg-[var(--accent-dim)] text-[var(--text-main)] hover:text-[var(--accent)] border border-[var(--border-subtle)] hover:border-[var(--accent)] text-xs font-semibold transition-all active:scale-95 disabled:opacity-50"
-            title="Discover a random masterpiece"
-          >
-            <Shuffle className={`w-3.5 h-3.5 ${isRollingSurprise ? 'animate-spin text-[var(--accent)]' : ''}`} />
-            <span>{isRollingSurprise ? 'Discovering...' : 'Surprise Gem'}</span>
-          </button>
-
-          {/* Refresh Feed */}
-          <button
-            id="btn-refresh-catalog"
-            onClick={handleRefresh}
-            className="p-2 rounded-xl bg-[var(--surface-raised)] hover:bg-[var(--surface-raised)] text-[var(--text-dim)] hover:text-[var(--accent)] transition-all border border-[var(--border-subtle)]"
-            title="Refresh Recommendations"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-[var(--accent)]' : ''}`} />
-          </button>
         </div>
       </div>
 
@@ -234,7 +177,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             onClick={() => handleBookClick(continueResult.book)}
             className="flex items-center gap-4 p-4 rounded-2xl bg-[var(--surface)] hover:bg-[var(--surface-raised)] border border-[var(--border-subtle)] hover:border-[var(--accent)] transition-all cursor-pointer group shadow-md"
           >
-            <div className="w-16 h-20 shrink-0 rounded-xl overflow-hidden bg-[var(--surface-raised)] border border-[var(--border-subtle)]">
+            <div className={`w-16 ${coverAspectClass} shrink-0 rounded-xl overflow-hidden bg-[var(--surface-raised)] border border-[var(--border-subtle)]`}>
               <img
                 src={continueResult.book.coverImageUrl}
                 alt={continueResult.book.title}
@@ -300,7 +243,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 onClick={() => handleBookClick(book)}
                 className="flex items-center gap-3 p-3 rounded-xl bg-[var(--surface)] hover:bg-[var(--surface)] border border-[var(--border-subtle)] hover:border-[var(--accent)] transition-all cursor-pointer group shadow-md active:scale-[0.98]"
               >
-                <div className="w-12 h-16 shrink-0 rounded-lg overflow-hidden bg-[var(--surface)] border border-[var(--border-subtle)]">
+                <div className={`w-12 ${coverAspectClass} shrink-0 rounded-lg overflow-hidden bg-[var(--surface)] border border-[var(--border-subtle)]`}>
                   <img
                     src={book.coverImageUrl}
                     alt={book.title}
@@ -337,7 +280,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               <div className="h-6 w-56 bg-[var(--surface-raised)] rounded-lg animate-pulse" />
               <div className="flex items-stretch gap-3.5 overflow-hidden pb-3">
                 {[1, 2, 3, 4, 5].map((i) => (
-                  <div key={i} className="w-40 sm:w-44 shrink-0 aspect-[3/4] bg-[var(--surface-raised)] rounded-2xl animate-pulse" />
+                  <div key={i} className={`w-40 sm:w-44 shrink-0 ${coverAspectClass} bg-[var(--surface-raised)] rounded-2xl animate-pulse`} />
                 ))}
               </div>
             </div>
@@ -389,6 +332,7 @@ const HorizontalBookShelf: React.FC<HorizontalShelfProps> = ({
   onReadBook,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const coverAspectClass = getCoverAspectClass(useCoverAspect());
 
   const scroll = (direction: 'left' | 'right') => {
     if (scrollRef.current) {
@@ -448,7 +392,7 @@ const HorizontalBookShelf: React.FC<HorizontalShelfProps> = ({
               onClick={() => onSelectBook(book)}
               className="group w-40 sm:w-44 shrink-0 snap-start flex flex-col bg-[var(--surface)] rounded-2xl border border-[var(--border-subtle)] p-3 hover:border-[var(--accent)] hover:bg-[var(--surface-raised)] transition-all duration-200 cursor-pointer shadow-md active:scale-[0.96]"
             >
-              <div className="relative aspect-[3/4] w-full rounded-xl overflow-hidden mb-2.5 bg-[var(--surface-raised)] border border-[var(--border-subtle)]">
+              <div className={`relative ${coverAspectClass} w-full rounded-xl overflow-hidden mb-2.5 bg-[var(--surface-raised)] border border-[var(--border-subtle)]`}>
                 <img
                   src={book.coverImageUrl}
                   alt={book.title}

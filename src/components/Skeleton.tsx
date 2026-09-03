@@ -1,4 +1,5 @@
 import React from 'react';
+import { getSavedCoverAspectClass } from '../utils/coverAspect';
 
 export const Skeleton: React.FC = () => {
   return (
@@ -6,7 +7,7 @@ export const Skeleton: React.FC = () => {
       <div className="h-8 w-64 bg-[var(--surface-raised)] rounded-lg" />
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
         {[...Array(10)].map((_, i) => (
-          <div key={i} className="aspect-[3/4] w-full rounded-2xl bg-[var(--surface-raised)]" />
+          <div key={i} className={`${getSavedCoverAspectClass()} w-full rounded-2xl bg-[var(--surface-raised)]`} />
         ))}
       </div>
     </div>

@@ -150,6 +150,7 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
           seekTo: playerState.currentTime > 0 ? playerState.currentTime : 0,
           autoPlay: playerState.isPlaying,
         });
+        AudioPlaybackNative.setEqualizer({ preset: playerState.voiceEnhancer }).catch(() => {});
       } catch {
         onError(`Failed to load "${track!.title}".`);
       }
@@ -173,6 +174,12 @@ export const AudioEngine: React.FC<AudioEngineProps> = ({
       AudioPlaybackNative.pause().catch(() => {});
     }
   }, [playerState.isPlaying]);
+
+  // Native: equalizer preset (AudioPlaybackService Equalizer audiofx)
+  useEffect(() => {
+    if (!isNativePlatform()) return;
+    AudioPlaybackNative.setEqualizer({ preset: playerState.voiceEnhancer }).catch(() => {});
+  }, [playerState.voiceEnhancer]);
 
   // Native: seek
   useEffect(() => {

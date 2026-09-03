@@ -15,6 +15,7 @@
     "@capacitor/app": "^8.1.1",
     "@capacitor/cli": "^8.5.0",
     "@capacitor/core": "^8.5.0",
+    "@capacitor/share": "^8.0.1",
     "@google/genai": "^2.4.0",
     "@tailwindcss/typography": "^0.5.20",
     "@tailwindcss/vite": "^4.1.14",

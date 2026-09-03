@@ -16,6 +16,7 @@ import {
   audioDownloadService,
   DownloadedChapterInfo,
 } from '../utils/audioDownloadService';
+import { useCoverAspect, getCoverAspectClass } from '../utils/coverAspect';
 
 interface ChapterDownloadModalProps {
   isOpen: boolean;
@@ -36,6 +37,8 @@ export const ChapterDownloadModal: React.FC<ChapterDownloadModalProps> = ({
   const [isResolvingTracks, setIsResolvingTracks] = useState(true);
   const [isBulkDownloading, setIsBulkDownloading] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
+
+  const coverAspectClass = getCoverAspectClass(useCoverAspect());
 
   const resolveTracks = useCallback(async () => {
     setIsResolvingTracks(true);
@@ -203,7 +206,7 @@ export const ChapterDownloadModal: React.FC<ChapterDownloadModalProps> = ({
             <img
               src={book.coverImageUrl}
               alt={book.title}
-              className="w-12 h-16 object-cover rounded-lg shrink-0 border border-[var(--border-subtle)]"
+              className={`w-12 ${coverAspectClass} object-cover rounded-lg shrink-0 border border-[var(--border-subtle)]`}
               referrerPolicy="no-referrer"
             />
             <div className="min-w-0 flex-1">

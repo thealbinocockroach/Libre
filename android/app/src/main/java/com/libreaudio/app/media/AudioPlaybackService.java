@@ -9,11 +9,14 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.media.AudioManager;
+import android.media.audiofx.Equalizer;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.util.Log;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
@@ -27,6 +30,7 @@ import androidx.media3.common.util.UnstableApi;
 import androidx.media3.exoplayer.ExoPlayer;
 import android.support.v4.media.session.MediaSessionCompat;
 import android.support.v4.media.session.PlaybackStateCompat;
+import androidx.media.session.MediaButtonReceiver;
 
 import com.getcapacitor.JSObject;
 
@@ -44,6 +48,10 @@ public class AudioPlaybackService extends Service {
     private MediaSessionCompat mediaSession;
     private Bitmap artworkBitmap;
     private String currentArtworkUrl;
+
+    private Equalizer equalizer;
+    private String currentPreset = "off";
+    private int audioSessionId = 0;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Object playerLock = new Object();
@@ -92,8 +100,19 @@ public class AudioPlaybackService extends Service {
         super.onCreate();
         instance = this;
         createChannel();
+        allocateAudioSession();
         initExoPlayer();
         initMediaSession();
+    }
+
+    private void allocateAudioSession() {
+        AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        if (am != null) {
+            audioSessionId = am.generateAudioSessionId();
+        }
+        if (audioSessionId <= 0) {
+            audioSessionId = 1;
+        }
     }
 
     private void initExoPlayer() {
@@ -101,8 +120,12 @@ public class AudioPlaybackService extends Service {
         exoPlayer.addListener(new Player.Listener() {
             @Override
             public void onIsPlayingChanged(boolean isPlaying) {
+                if (isPlaying) {
+                    ensureAudioEffects();
+                }
                 emitState();
-                if (isPlaying) startForeground(NOTIF_ID, buildNotification());
+                updatePlaybackState();
+                updateNotification();
             }
 
             @Override
@@ -110,6 +133,7 @@ public class AudioPlaybackService extends Service {
                 if (state == Player.STATE_ENDED) {
                     emit("ended");
                 } else if (state == Player.STATE_READY) {
+                    ensureAudioEffects();
                     emit("ready");
                 } else if (state == Player.STATE_BUFFERING) {
                     emit("buffering");
@@ -131,6 +155,107 @@ public class AudioPlaybackService extends Service {
         });
     }
 
+    private synchronized void ensureAudioEffects() {
+        if (exoPlayer == null) return;
+        try {
+            int realSessionId = 0;
+            try {
+                realSessionId = exoPlayer.getAudioSessionId();
+            } catch (Exception ignored) {}
+            if (realSessionId <= 0) {
+                realSessionId = audioSessionId;
+            }
+            if (realSessionId <= 0) return;
+
+            if (equalizer == null || this.audioSessionId != realSessionId) {
+                if (equalizer != null) {
+                    try {
+                        equalizer.release();
+                    } catch (Exception ignored) {}
+                    equalizer = null;
+                }
+                this.audioSessionId = realSessionId;
+                equalizer = new Equalizer(0, realSessionId);
+                Log.d("LibreAudioEQ", "Equalizer bound to audioSessionId=" + realSessionId + " bands=" + equalizer.getNumberOfBands());
+            }
+            applyPreset(currentPreset);
+        } catch (Exception e) {
+            Log.e("LibreAudioEQ", "ensure failed", e);
+        }
+    }
+
+    public void setEqualizer(String preset) {
+        if (preset == null) preset = "off";
+        currentPreset = preset;
+        runOnMain(() -> {
+            ensureAudioEffects();
+            applyPreset(currentPreset);
+        });
+    }
+
+    private void applyPreset(String preset) {
+        Log.d("LibreAudioEQ", "applyPreset -> " + preset + " eq=" + (equalizer != null));
+        if (equalizer == null) return;
+        try {
+            if ("off".equals(preset)) {
+                equalizer.setEnabled(false);
+                return;
+            }
+            if (!equalizer.getEnabled()) {
+                equalizer.setEnabled(true);
+            }
+            short[] bandRange = equalizer.getBandLevelRange();
+            int minDb = bandRange[0];
+            int maxDb = bandRange[1];
+            int numBands = equalizer.getNumberOfBands();
+            for (int i = 0; i < numBands; i++) {
+                double freqHz = equalizer.getCenterFreq((short) i) / 1000.0;
+                int gainMillibel = computeBandGain(preset, freqHz) * 100;
+                gainMillibel = Math.max(minDb, Math.min(maxDb, gainMillibel));
+                equalizer.setBandLevel((short) i, (short) gainMillibel);
+            }
+        } catch (Exception e) {
+            Log.e("LibreAudioEQ", "applyPreset failed", e);
+        }
+    }
+
+    private int computeBandGain(String preset, double fHz) {
+        switch (preset) {
+            case "voice_boost": {
+                // Speech presence boost (1kHz - 3.5kHz) and roll off muddy sub-bass rumble
+                if (fHz < 250) return -4;
+                if (fHz >= 1000 && fHz <= 3500) return 7;
+                if (fHz > 3500 && fHz <= 6000) return 4;
+                return 0;
+            }
+            case "clarity":
+                // Bright high-shelf
+                if (fHz < 200) return -2;
+                if (fHz >= 3500) return 7;
+                if (fHz >= 1800) return 4;
+                return 0;
+            case "bass_warmth":
+                // Rich warm narration low-shelf
+                if (fHz <= 250) return 8;
+                if (fHz <= 500) return 4;
+                if (fHz >= 3500) return -3;
+                return 0;
+            case "treble_bright":
+                if (fHz >= 5000) return 8;
+                if (fHz >= 2500) return 5;
+                if (fHz <= 300) return -2;
+                return 0;
+            case "noise_reduce":
+                // De-hiss: steep roll-off above 4kHz
+                if (fHz >= 5000) return -12;
+                if (fHz >= 3000) return -7;
+                if (fHz >= 1500) return -3;
+                return 0;
+            default:
+                return 0;
+        }
+    }
+
     private void initMediaSession() {
         mediaSession = new MediaSessionCompat(this, "LibreAudioPlayback");
         mediaSession.setFlags(
@@ -138,14 +263,23 @@ public class AudioPlaybackService extends Service {
             MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
         );
         mediaSession.setCallback(new MediaSessionCompat.Callback() {
-            @Override public void onPlay() { emit("play"); }
-            @Override public void onPause() { emit("pause"); }
+            @Override public void onPlay() {
+                if (exoPlayer != null) exoPlayer.setPlayWhenReady(true);
+                emit("play");
+            }
+            @Override public void onPause() {
+                if (exoPlayer != null) exoPlayer.setPlayWhenReady(false);
+                emit("pause");
+            }
             @Override public void onSkipToNext() { emit("next"); }
             @Override public void onSkipToPrevious() { emit("previous"); }
             @Override public void onSeekTo(long pos) {
                 if (exoPlayer != null) exoPlayer.seekTo(pos);
             }
-            @Override public void onStop() { emit("stop"); }
+            @Override public void onStop() {
+                if (exoPlayer != null) exoPlayer.stop();
+                emit("stop");
+            }
         });
         mediaSession.setActive(true);
     }
@@ -158,6 +292,11 @@ public class AudioPlaybackService extends Service {
         this.artworkUrl = artUrl;
 
         MediaItem mediaItem = MediaItem.fromUri(Uri.parse(url));
+        if (audioSessionId > 0 && exoPlayer.getAudioSessionId() != audioSessionId) {
+            try {
+                exoPlayer.setAudioSessionId(audioSessionId);
+            } catch (Exception ignored) {}
+        }
         exoPlayer.setMediaItem(mediaItem);
         exoPlayer.prepare();
 
@@ -183,6 +322,8 @@ public class AudioPlaybackService extends Service {
             if (exoPlayer != null) {
                 exoPlayer.setPlayWhenReady(true);
             }
+            updatePlaybackState();
+            updateNotification();
         });
     }
 
@@ -191,6 +332,8 @@ public class AudioPlaybackService extends Service {
             if (exoPlayer != null) {
                 exoPlayer.setPlayWhenReady(false);
             }
+            updatePlaybackState();
+            updateNotification();
         });
     }
 
@@ -298,36 +441,36 @@ public class AudioPlaybackService extends Service {
         }).start();
     }
 
-    private PendingIntent commandPendingIntent(String command, int requestCode) {
-        Intent intent = new Intent(this, AudioPlaybackService.class);
-        intent.putExtra("command", command);
-        return PendingIntent.getService(this, requestCode, intent,
-            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-    }
-
     private Notification buildNotification() {
         NotificationCompat.Action playPause;
         boolean playing = exoPlayer != null && exoPlayer.isPlaying();
         if (playing) {
             playPause = new NotificationCompat.Action(
                 android.R.drawable.ic_media_pause, "Pause",
-                commandPendingIntent("notifPause", 2001));
+                MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_PAUSE)
+            );
         } else {
             playPause = new NotificationCompat.Action(
                 android.R.drawable.ic_media_play, "Play",
-                commandPendingIntent("notifPlay", 2002));
+                MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_PLAY)
+            );
         }
 
         NotificationCompat.Action prev = new NotificationCompat.Action(
             android.R.drawable.ic_media_previous, "Previous",
-            commandPendingIntent("notifPrevious", 2003));
+            MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS)
+        );
         NotificationCompat.Action next = new NotificationCompat.Action(
             android.R.drawable.ic_media_next, "Next",
-            commandPendingIntent("notifNext", 2004));
+            MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_SKIP_TO_NEXT)
+        );
 
         Intent launch = getPackageManager().getLaunchIntentForPackage(getPackageName());
         PendingIntent pending = PendingIntent.getActivity(this, 0, launch,
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+
+        long pos = exoPlayer != null ? exoPlayer.getCurrentPosition() : 0;
+        long dur = exoPlayer != null ? exoPlayer.getDuration() : 0;
 
         androidx.media.app.NotificationCompat.MediaStyle style =
             new androidx.media.app.NotificationCompat.MediaStyle()
@@ -345,6 +488,7 @@ public class AudioPlaybackService extends Service {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(playing)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setProgress((int) dur, (int) pos, dur <= 0)
             .addAction(prev)
             .addAction(playPause)
             .addAction(next)
@@ -399,6 +543,11 @@ public class AudioPlaybackService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        // A service started via startForegroundService() MUST call startForeground()
+        // promptly on every invocation, otherwise Android throws
+        // ForegroundServiceDidNotStartInTimeException and crashes the app.
+        startForeground(NOTIF_ID, buildNotification());
+
         if (intent != null) {
             if (intent.getBooleanExtra("load", false)) {
                 load(
@@ -416,10 +565,6 @@ public class AudioPlaybackService extends Service {
                 else if ("pause".equals(cmd)) pause();
                 else if ("stop".equals(cmd)) stop();
                 else if ("seek".equals(cmd)) seekTo(intent.getDoubleExtra("position", 0));
-                else if ("notifPlay".equals(cmd)) emit("play");
-                else if ("notifPause".equals(cmd)) emit("pause");
-                else if ("notifNext".equals(cmd)) emit("next");
-                else if ("notifPrevious".equals(cmd)) emit("previous");
             }
         }
         return START_STICKY;
@@ -427,6 +572,12 @@ public class AudioPlaybackService extends Service {
 
     @Override
     public void onDestroy() {
+        if (equalizer != null) {
+            try {
+                equalizer.release();
+            } catch (Exception ignored) {}
+            equalizer = null;
+        }
         if (exoPlayer != null) {
             exoPlayer.release();
             exoPlayer = null;

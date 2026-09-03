@@ -97,6 +97,16 @@ public class AudioPlaybackPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void setEqualizer(PluginCall call) {
+        String preset = call.getString("preset", "off");
+        AudioPlaybackService svc = AudioPlaybackService.instance;
+        if (svc != null) {
+            svc.setEqualizer(preset);
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
     public void stop(PluginCall call) {
         Intent intent = new Intent(getContext(), AudioPlaybackService.class);
         intent.putExtra("command", "stop");

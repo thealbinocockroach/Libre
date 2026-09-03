@@ -48,6 +48,7 @@ export interface EbookReaderSettings {
   columnWidth: 'narrow' | 'normal' | 'wide';
   textAlign: 'left' | 'justify';
   swipeDirection: 'natural' | 'reversed';
+  accentColor: string; // empty '' = use theme default, or a hex color e.g. '#7C3AED'
 }
 
 export type HighlightColor = 'gold' | 'emerald' | 'sapphire' | 'amethyst';
@@ -174,6 +175,7 @@ export interface ReadingSessionRecord {
   chapterIndex: number;
   chapterTitle: string;
   durationSeconds: number; // exact seconds spent reading
+  wordsRead?: number; // words read during this session
   startTimestamp: number;
   endTimestamp: number;
   scrollPercentage?: number;

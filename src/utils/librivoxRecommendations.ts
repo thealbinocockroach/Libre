@@ -8,9 +8,56 @@ import {
 import { httpGetJson } from './httpClient';
 import { parseTimeString } from './timeParser';
 
-// --- Simple in-memory cache (5 min TTL for search results) ---
-const _cache = new Map<string, { data: any; expiry: number }>();
+// --- Persistent cache (localStorage-backed) ---
+// Keeps search/recommendation results across tab switches AND app restarts,
+// so returning to the homepage does not trigger a reload of the feed.
 const CACHE_TTL = 5 * 60 * 1000;
+const STORAGE_KEY = 'libriaudio_fetch_cache_v1';
+
+type CacheEntry = { data: unknown; expiry: number };
+
+function loadPersistentCache(): Map<string, CacheEntry> {
+  const map = new Map<string, CacheEntry>();
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return map;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      for (const [k, v] of Object.entries(parsed)) {
+        if (v && typeof v === 'object' && 'data' in v && 'expiry' in v) {
+          map.set(k, v as CacheEntry);
+        }
+      }
+    }
+  } catch (e) {
+    // ignore corrupt cache
+  }
+  return map;
+}
+
+function persistCache(map: Map<string, CacheEntry>): void {
+  try {
+    const obj: Record<string, CacheEntry> = {};
+    map.forEach((v, k) => {
+      obj[k] = v;
+    });
+    if (Object.keys(obj).length > 100) {
+      // Evict expired entries before writing so the blob stays small
+      const now = Date.now();
+      const pruned: Record<string, CacheEntry> = {};
+      for (const [k, v] of Object.entries(obj)) {
+        if (now <= v.expiry) pruned[k] = v;
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(pruned));
+    } else {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(obj));
+    }
+  } catch (e) {
+    // storage full or unavailable; non-fatal
+  }
+}
+
+const _cache = loadPersistentCache();
 
 function cacheGet<T>(key: string): T | null {
   const entry = _cache.get(key);
@@ -29,10 +76,14 @@ function cacheSet(key: string, data: any, ttl = CACHE_TTL): void {
     const oldest = _cache.keys().next().value;
     if (oldest !== undefined) _cache.delete(oldest);
   }
+  persistCache(_cache);
 }
 
 export function clearFetchCache(): void {
   _cache.clear();
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (e) {}
 }
 
 export interface RecommendationSection {
@@ -56,22 +107,29 @@ export const LIBRIVOX_GENRES: GenreCategory[] = [
     id: 'mystery',
     label: 'Mystery & Detective',
     iconName: 'Search',
-    query: 'sherlock OR poe OR "arthur conan doyle" OR "wilkie collins" OR detective OR mystery',
+    query: 'sherlock OR poe OR "arthur conan doyle" OR "wilkie collins" OR "gaston leroux" OR detective OR mystery',
     description: 'Intriguing whodunits, Victorian sleuths, and perplexing crimes',
   },
   {
     id: 'gothic',
     label: 'Gothic & Horror',
     iconName: 'Ghost',
-    query: 'frankenstein OR dracula OR "edgar allan poe" OR "lovecraft" OR "bram stoker" OR gothic OR horror',
+    query: 'frankenstein OR dracula OR "edgar allan poe" OR lovecraft OR "bram stoker" OR gothic OR horror',
     description: 'Chilling supernatural tales, haunted estates, and dark romantics',
   },
   {
     id: 'scifi',
     label: 'Sci-Fi & Speculative',
-    iconName: 'Compass',
+    iconName: 'Rocket',
     query: '"time machine" OR "jules verne" OR "h g wells" OR "war of the worlds" OR "twenty thousand leagues"',
     description: 'Early science fiction, time travel, and visionary voyages',
+  },
+  {
+    id: 'fantasy',
+    label: 'Fantasy & Fairy Tales',
+    iconName: 'Wand',
+    query: '"fairy tales" OR grimm OR andersen OR "the wonderful wizard of oz" OR "alice in wonderland" OR "a christmas carol" OR "lord dunsany"',
+    description: 'Heavy is the tome of enchanted realms and classic fables',
   },
   {
     id: 'philosophy',
@@ -99,21 +157,161 @@ export const LIBRIVOX_GENRES: GenreCategory[] = [
     label: 'Poetry',
     iconName: 'Feather',
     query: 'shakespeare OR whitman OR dickinson OR "edgar allan poe" OR poetry',
-    description: 'Classic verses and timeless poetry collections'
+    description: 'Classic verses and timeless poetry collections',
   },
   {
     id: 'history',
     label: 'History & Biographies',
     iconName: 'Landmark',
-    query: 'gibbon OR "julius caesar" OR lincoln OR churchill OR history',
-    description: 'Real accounts, historical records, and biographies'
+    query: 'gibbon OR "julius caesar" OR lincoln OR churchill OR "the decline and fall" OR history',
+    description: 'Real accounts, historical records, and biographies',
   },
   {
     id: 'comedy',
     label: 'Comedy & Satire',
     iconName: 'Smile',
-    query: 'twain OR "oscar wilde" OR "pg wodehouse" OR satire OR humor',
-    description: 'Witty plays, satirical novels, and classic humor'
+    query: 'twain OR "oscar wilde" OR "pg wodehouse" OR "jerome k jerome" OR satire OR humor',
+    description: 'Witty plays, satirical novels, and classic humor',
+  },
+  {
+    id: 'children',
+    label: "Children's Fiction",
+    iconName: 'Baby',
+    query: '"little women" OR "anne of green gables" OR "black beauty" OR aesop OR "mother goose" OR "the secret garden"',
+    description: 'Beloved tales and fables for younger listeners',
+  },
+  {
+    id: 'plays',
+    label: 'Plays & Drama',
+    iconName: 'Drama',
+    query: 'shakespeare OR moliere OR ibsen OR chekhov OR "dramatic reading" OR plays',
+    description: 'Stage classics, spoken-word drama, and theatrical casts',
+  },
+  {
+    id: 'shortstories',
+    label: 'Short Stories',
+    iconName: 'BookText',
+    query: '"short stories" OR "short story collection" OR "great short" OR "the gift of the magi"',
+    description: 'Compact masterpieces and multi-author collections',
+  },
+  {
+    id: 'nature',
+    label: 'Nature & Animals',
+    iconName: 'Leaf',
+    query: '"black beauty" OR "call of the wild" OR "white fang" OR "a naturalist" OR birds OR animals',
+    description: 'The natural world, animal tales, and outdoor observation',
+  },
+  {
+    id: 'travel',
+    label: 'Travel & Exploration',
+    iconName: 'Globe',
+    query: '"innocents abroad" OR "a tramp abroad" OR "two years before the mast" OR mountaineering OR explorers',
+    description: 'Journeys, expeditions, and vivid accounts of far-off places',
+  },
+  {
+    id: 'religion',
+    label: 'Spiritual & Religious',
+    iconName: 'Church',
+    query: 'bible OR "king james" OR sermons OR theology OR "book of common prayer"',
+    description: 'Sacred texts, sermons, and works of devotion',
+  },
+  {
+    id: 'classics',
+    label: 'Classics of Antiquity',
+    iconName: 'Columns',
+    query: '"the iliad" OR "the odyssey" OR homer OR "the aeneid" OR virgil OR sophocles OR aeschylus OR herodotus',
+    description: 'Greek and Latin masterworks that shaped the canon',
+  },
+  {
+    id: 'sagas',
+    label: 'Sagas & Epics',
+    iconName: 'Scroll',
+    query: 'sagas OR vikings OR "norse" OR "beowulf" OR siegfried OR "ring of the"',
+    description: 'Heroic legends, northern myths, and grand cycles',
+  },
+  {
+    id: 'sports',
+    label: 'Sports Fiction',
+    iconName: 'Trophy',
+    query: 'baseball OR cricket OR boxing OR football OR "sports" OR "the game"',
+    description: 'Underdog stories and contests of skill and heart',
+  },
+  {
+    id: 'science',
+    label: 'Science & Discovery',
+    iconName: 'FlaskConical',
+    query: 'darwin OR "on the origin of species" OR newton OR galileo OR astronomy OR "scientific"',
+    description: 'Pioneering treatises on the natural and physical world',
+  },
+  {
+    id: 'music',
+    label: 'Music & Performing Arts',
+    iconName: 'Music',
+    query: 'beethoven OR mozart OR wagner OR "great musicians" OR opera OR "music"',
+    description: 'Composers, concerts, and the joy of performance',
+  },
+  {
+    id: 'war',
+    label: 'War & Military',
+    iconName: 'Shield',
+    query: '"civil war" OR napoleon OR "world war" OR military OR "the art of war"',
+    description: 'Campaigns, armies, and the great conflicts of history',
+  },
+  {
+    id: 'suspense',
+    label: 'Thrillers & Suspense',
+    iconName: 'Zap',
+    query: 'espionage OR "secret agent" OR "the spy" OR thriller OR suspense',
+    description: 'International intrigue, conspiracies, and edge-of-seat plots',
+  },
+  {
+    id: 'western',
+    label: 'Westerns',
+    iconName: 'MapIcon',
+    query: '"zane grey" OR "last of the mohicans" OR "lone star" OR "buffalo bill" OR "the prairie" OR westward',
+    description: 'Frontier pioneers, plains, and rough-and-ready heroes',
+  },
+  {
+    id: 'politics',
+    label: 'Political Science',
+    iconName: 'Scale',
+    query: '"the prince" OR "social contract" OR "the rights of man" OR democracy OR government',
+    description: 'On power, liberty, and the shape of the state',
+  },
+  {
+    id: 'selfhelp',
+    label: 'Self-Help & Success',
+    iconName: 'Target',
+    query: 'franklin OR "art of living" OR "mental" OR improvement OR success',
+    description: 'Practical wisdom for character and accomplishment',
+  },
+  {
+    id: 'psychology',
+    label: 'Psychology & The Mind',
+    iconName: 'Lightbulb',
+    query: 'freud OR psychology OR suggestion OR "the mind" OR "will power"',
+    description: 'Early explorations of thought, habit, and behavior',
+  },
+  {
+    id: 'education',
+    label: 'Reference & Learning',
+    iconName: 'GraduationCap',
+    query: 'grammar OR primer OR "encyclopedia" OR "the school" OR education',
+    description: 'Guides, primers, and the pursuit of knowledge',
+  },
+  {
+    id: 'epistolary',
+    label: 'Epistolary & Letters',
+    iconName: 'Mail',
+    query: '"familiar letters" OR "letters of" OR "letters from" OR correspondence',
+    description: 'Stories and lives told through correspondence',
+  },
+  {
+    id: 'family',
+    label: 'Family Life',
+    iconName: 'Home',
+    query: '"home" OR mother OR father OR "family" OR "the home" OR married',
+    description: 'Households, hearts, and domestic drama',
   }
 ];
 

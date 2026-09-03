@@ -5,6 +5,8 @@ export type ThemeId =
   | 'forest-slate'
   | 'crimson-velvet'
   | 'paper-light'
+  | 'slate-mono'
+  | 'ocean-depths'
   | 'smart-adaptive'
   | 'custom';
 
@@ -310,6 +312,62 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     },
     previewColors: ['#F7F4EC', '#EAE4D7', '#8C6016'],
   },
+  'slate-mono': {
+    id: 'slate-mono',
+    name: 'Slate Mono',
+    subtitle: 'Cool neutral slate with muted steel accents',
+    category: 'dark',
+    colors: {
+      bg: '#0C0E10',
+      surface: '#181C20',
+      surfaceRaised: '#1F2429',
+      accent: '#94A3B8',
+      accentHover: '#A8B8CC',
+      accentDim: 'rgba(148, 163, 184, 0.15)',
+      accentRgb: '148, 163, 184',
+      textMain: '#F1F5F9',
+      textDim: '#8494A7',
+      border: 'rgba(255, 255, 255, 0.08)',
+      onAccent: '#0C0E10',
+      success: '#4ADE80',
+      successDim: 'rgba(74, 222, 128, 0.16)',
+      warning: '#FBBF24',
+      warningDim: 'rgba(251, 191, 36, 0.16)',
+      danger: '#F87171',
+      dangerDim: 'rgba(248, 113, 113, 0.16)',
+      overlay: 'rgba(0, 0, 0, 0.85)',
+      scrollbar: 'rgba(255, 255, 255, 0.18)',
+    },
+    previewColors: ['#0C0E10', '#181C20', '#94A3B8'],
+  },
+  'ocean-depths': {
+    id: 'ocean-depths',
+    name: 'Ocean Depths',
+    subtitle: 'Deep sea blue with cool cyan highlights',
+    category: 'dark',
+    colors: {
+      bg: '#060d18',
+      surface: '#0c1825',
+      surfaceRaised: '#112033',
+      accent: '#38BDF8',
+      accentHover: '#5CCDF9',
+      accentDim: 'rgba(56, 189, 248, 0.15)',
+      accentRgb: '56, 189, 248',
+      textMain: '#E0F0FF',
+      textDim: '#7AA3C8',
+      border: 'rgba(255, 255, 255, 0.08)',
+      onAccent: '#060d18',
+      success: '#4ADE80',
+      successDim: 'rgba(74, 222, 128, 0.16)',
+      warning: '#FBBF24',
+      warningDim: 'rgba(251, 191, 36, 0.16)',
+      danger: '#F87171',
+      dangerDim: 'rgba(248, 113, 113, 0.16)',
+      overlay: 'rgba(0, 0, 0, 0.85)',
+      scrollbar: 'rgba(255, 255, 255, 0.18)',
+    },
+    previewColors: ['#060d18', '#0c1825', '#38BDF8'],
+  },
   'smart-adaptive': {
     id: 'smart-adaptive',
     name: 'Smart Adaptive',
@@ -432,9 +490,9 @@ export function resolveThemeDef(themeId: ThemeId): ThemeDefinition {
   }
   if (themeId === 'smart-adaptive') {
     const resolved = getSmartAdaptiveResolvedTheme();
-    return THEMES[resolved] || THEMES['midnight-gold'];
+    return THEMES[resolved] || THEMES['slate-mono'];
   }
-  return THEMES[themeId] || THEMES['midnight-gold'];
+  return THEMES[themeId] || THEMES['slate-mono'];
 }
 
 /**
@@ -451,7 +509,7 @@ export function getSmartAdaptiveResolvedTheme(): ThemeId {
     return 'warm-sepia';
   }
   // 21:00 to 07:00 -> Midnight Gold / OLED
-  return 'midnight-gold';
+  return 'slate-mono';
 }
 
 /**
@@ -505,7 +563,7 @@ let adaptiveTimer: ReturnType<typeof setInterval> | null = null;
  * Initialize theme from localStorage and attach interval listener for smart adaptive
  */
 export function initTheme(): ThemeId {
-  let saved: ThemeId = 'midnight-gold';
+  let saved: ThemeId = 'slate-mono';
   try {
     const item = localStorage.getItem(THEME_STORAGE_KEY) as ThemeId;
     if (item && THEMES[item]) {
@@ -563,5 +621,5 @@ export function getSavedTheme(): ThemeId {
     const item = localStorage.getItem(THEME_STORAGE_KEY) as ThemeId;
     if (item && THEMES[item]) return item;
   } catch (e) {}
-  return 'midnight-gold';
+  return 'slate-mono';
 }

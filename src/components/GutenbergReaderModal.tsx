@@ -63,6 +63,16 @@ import {
 } from '../utils/activityTracker';
 import { saveBookNote, deleteBookNote } from '../utils/notesStorage';
 import { launchExternalDictionary, extractLookupWord } from '../utils/dictionaryLauncher';
+import {
+  setBlockNativeSelection,
+  getSelectionOffsets,
+  getCaretPositionFromCoordinates,
+  updateSelectionRangeSafely,
+  calculateMenuPosition,
+  getWordRangeAtPoint,
+  createOrderedRange,
+  getRangeBoundaryCaretRect,
+} from '../utils/textSelection';
 
 interface GutenbergReaderModalProps {
   isOpen: boolean;
@@ -86,6 +96,7 @@ const DEFAULT_SETTINGS: EbookReaderSettings = {
   columnWidth: 'normal',
   textAlign: 'left',
   swipeDirection: 'natural',
+  accentColor: '',
 };
 
 const HIGHLIGHT_COLORS: { id: HighlightColor; name: string; bg: string; border: string; dot: string }[] = [
@@ -99,6 +110,27 @@ const SHARED_HIGHLIGHT_COLORS: HighlightColor[] = ['gold', 'emerald', 'sapphire'
 
 function escapeHtmlText(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Derive a usable white/black text color (--on-accent) from a hex accent
+function accentVector(hex: string): [number, number, number] {
+  const h = hex.replace('#', '');
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  const num = parseInt(full, 16);
+  return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+}
+
+function lightenHex(hex: string, amt: number): string {
+  const [r, g, b] = accentVector(hex);
+  const mix = (v: number) =>
+    Math.round(v + (255 - v) * amt).toString(16).padStart(2, '0');
+  return `#${mix(r)}${mix(g)}${mix(b)}`;
+}
+
+function onAccentFor(hex: string): string {
+  const [r, g, b] = accentVector(hex);
+  const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b);
+  return lum > 140 ? '#0A0A0A' : '#FFFFFF';
 }
 
 function mapHighlightToNoteColor(color: HighlightColor): NoteColor {
@@ -156,16 +188,10 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     x: number;
     y: number;
     text: string;
-  } | null>(null);
-
-  // Custom (Moon+ style) selection: highlight paint boxes (content coords) and
-  // draggable handle positions (viewport coords).
-  const [activeSelBoxes, setActiveSelBoxes] = useState<
-    { top: number; left: number; width: number; height: number }[]
-  >([]);
-  const [handlePos, setHandlePos] = useState<{
-    start: { x: number; y: number };
-    end: { x: number; y: number };
+    startChar?: number;
+    endChar?: number;
+    handleStart?: { x: number; y: number };
+    handleEnd?: { x: number; y: number };
   } | null>(null);
 
   // Add / Edit Note Dialog
@@ -175,6 +201,8 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     text: string;
     note: string;
     color: HighlightColor;
+    startChar?: number;
+    endChar?: number;
   } | null>(null);
 
   // Selected highlight bubble when clicking highlighted text
@@ -203,23 +231,34 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
   const sessionStartRef = useRef<number>(Date.now());
   const sessionSecondsRef = useRef<number>(0);
   const lastFlushedSecondsRef = useRef<number>(0);
+  const sessionStartScrollRef = useRef<number>(0);
   const targetScrollPercentageRef = useRef<number>(0);
   const isRestoringPositionRef = useRef<boolean>(false);
-  // Selection refs ----------
-  // Overlay DOM refs (the active-selection layer + handles). Never part of the
-  // article's own HTML, so committed highlights / search marks are unaffected.
-  const selectionLayerRef = useRef<HTMLDivElement | null>(null);
-  const selStartHandleRef = useRef<HTMLDivElement | null>(null);
-  const selEndHandleRef = useRef<HTMLDivElement | null>(null);
-  // Logical active selection (character offsets into a flat text index).
-  const selectionLockRef = useRef(false);
-  const selStartCharRef = useRef<number>(-1);
-  const selEndCharRef = useRef<number>(-1);
-  // While true, a long-press is arming (before the gesture fires). Guarded with
-  // a timestamp so pointer-up handlers don't misfire during the hold.
-  const longPressTimerRef = useRef<number | null>(null);
-  const longPressArmedRef = useRef(false);
-  const dragHandleRef = useRef<'start' | 'end' | null>(null);
+  // Persisted native selection range: kept alive while the floating menu is
+  // open so taps on the menu don't collapse the highlight.
+  const selectionRangeRef = useRef<Range | null>(null);
+  const selectionClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleDragRef = useRef<{ which: 'start' | 'end'; anchorContainer: Node; anchorOffset: number } | null>(null);
+  const [activeDraggingHandle, setActiveDraggingHandle] = useState<'start' | 'end' | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pointerDownPosRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const isHoldSelectingRef = useRef<boolean>(false);
+  const holdAnchorRef = useRef<{ node: Node; offset: number } | null>(null);
+
+  // Swipe gesture tracking for chapter navigation
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Suppress native Android ActionMode toolbar when the ebook reader is open
+  useEffect(() => {
+    if (isOpen) {
+      setBlockNativeSelection(true);
+    } else {
+      setBlockNativeSelection(false);
+    }
+    return () => {
+      setBlockNativeSelection(false);
+    };
+  }, [isOpen]);
 
   // Sync currentBook when prop changes and restore saved reading position
   useEffect(() => {
@@ -248,7 +287,8 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
 
   // Load Annotations & Bookmarks from localStorage
   useEffect(() => {
-    if (!currentBook.id) return;    try {
+    if (!currentBook.id) return;
+    try {
       const savedAnn = localStorage.getItem(`libriaudio_ann_${currentBook.id}`);
       if (savedAnn) setAnnotations(JSON.parse(savedAnn));
       else setAnnotations([]);
@@ -261,264 +301,13 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     }
   }, [currentBook.id]);
 
-  // Stable refs to the latest gesture/selection handlers so the document-level
-  // listeners below do not need to re-subscribe (and drop state) on each render.
-  const onLongPressRef = useRef<(x: number, y: number) => void>(() => {});
-  const onDragMoveRef = useRef<((clientX: number, clientY: number) => void) | null>(null);
-  const onDragEndRef = useRef<() => void>(() => {});
-  const onDismissTapRef = useRef<(e: PointerEvent) => void>(() => {});
-  // Mirror of activeSelBoxes for use inside the non-rendering dismiss handler.
-  const activeSelBoxesRef = useRef<{ top: number; left: number; width: number; height: number }[]>(
-    []
-  );
-
-  // Character-offset index over the rendered article text. Built once per
-  // chapter/annotation pass so hit-testing and selection can work purely in JS
-  // (no reliance on the WebView's native selection).
-  const charIndexRef = useRef<{ text: string; startChar: Map<Text, number>; nodes: Text[] } | null>(
-    null
-  );
-
-  const rebuildCharIndex = () => {
-    const article = articleRef.current;
-    charIndexRef.current = null;
-    if (!article) return;
-    const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT, null);
-    const nodes: Text[] = [];
-    const startChar = new Map<Text, number>();
-    let acc = '';
-    let node: Node | null;
-    while ((node = walker.nextNode())) {
-      const t = node as Text;
-      const v = t.nodeValue || '';
-      if (!v) continue;
-      // Mirror the highlight renderer's traversal: skip text inside marks /
-      // interactive / hidden elements so the character offsets match the
-      // renderer's own flat text exactly (otherwise highlights misalign once a
-      // previous highlight has been committed).
-      const parent = t.parentElement;
-      if (
-        parent &&
-        ['mark', 'script', 'style', 'button', 'noscript'].includes(parent.tagName.toLowerCase())
-      ) {
-        continue;
-      }
-      startChar.set(t, acc.length);
-      acc += v;
-      nodes.push(t);
-    }
-    charIndexRef.current = { text: acc, startChar, nodes };
-  };
-
-  // Long-press gesture: tap-and-hold on body text starts a custom selection.
-  // Also handles double-tap (word) and triple-tap (paragraph) for Moon+-like UX.
+  // Clear the native selection when the chapter or a layout-affecting setting
+  // changes (the selection highlight + custom menu would otherwise become stale).
   useEffect(() => {
     if (!isOpen) return;
-    const el = contentContainerRef.current;
-    if (!el) return;
+    clearSelectionState();
+  }, [currentChapterIndex, settings.fontSize, settings.lineHeight, settings.columnWidth, settings.fontFamily]);
 
-    const cancelLongPress = () => {
-      if (longPressTimerRef.current) {
-        window.clearTimeout(longPressTimerRef.current);
-        longPressTimerRef.current = null;
-      }
-      longPressArmedRef.current = false;
-    };
-
-    let tapCount = 0;
-    let lastTapTime = 0;
-    let lastTapClientX = 0;
-    let lastTapClientY = 0;
-
-    // Pointer Events only (Android WebView fully supports them). Registering
-    // BOTH pointer and touch caused every gesture to fire twice, so `onUp` ran
-    // back-to-back and the double-tap word-selection branch fired on every
-    // release. Using pointer events alone makes long-press -> drag -> release
-    // deterministic.
-    const onDown = (e: PointerEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.closest('#reader-floating-selection-menu')) return;
-      if (target.closest('.libriaudio-sel-handle')) return;
-      if (selectionLockRef.current) return;
-      cancelLongPress();
-      longPressArmedRef.current = true;
-      longPressTimerRef.current = window.setTimeout(() => {
-        longPressTimerRef.current = null;
-        longPressArmedRef.current = false;
-        onLongPressRef.current(e.clientX, e.clientY);
-      }, 450);
-    };
-
-    const onUp = (e: PointerEvent) => {
-      const now = Date.now();
-      const target = e.target as HTMLElement;
-      if (target.closest('#reader-floating-selection-menu')) {
-        cancelLongPress();
-        return;
-      }
-      if (target.closest('.libriaudio-sel-handle')) {
-        cancelLongPress();
-        return;
-      }
-
-      const clientX = e.clientX;
-      const clientY = e.clientY;
-      const dx = Math.abs(clientX - lastTapClientX);
-      const dy = Math.abs(clientY - lastTapClientY);
-      const sameSpot = dx < 8 && dy < 8;
-
-      if (sameSpot && now - lastTapTime < 300) {
-        tapCount++;
-      } else {
-        tapCount = 1;
-      }
-      lastTapTime = now;
-      lastTapClientX = clientX;
-      lastTapClientY = clientY;
-
-      if (tapCount === 2) {
-        cancelLongPress();
-        const idx = charIndexRef.current;
-        if (idx) {
-          const c = charAtPoint(clientX, clientY);
-          if (c >= 0) {
-            window.getSelection()?.removeAllRanges();
-            const [ws, we] = expandToWord(idx.text, c);
-            selStartCharRef.current = ws;
-            selEndCharRef.current = we;
-            selectionLockRef.current = true;
-            dragHandleRef.current = null;
-            recomputeSelection();
-            tapCount = 0;
-          }
-        }
-      } else if (tapCount === 3) {
-        cancelLongPress();
-        const idx = charIndexRef.current;
-        if (idx) {
-          const c = charAtPoint(clientX, clientY);
-          if (c >= 0) {
-            window.getSelection()?.removeAllRanges();
-            const { node } = nodeAndOffset(c);
-            if (node) {
-              let paraNode = node;
-              while (paraNode.parentElement && !isBlockElement(paraNode.parentElement)) {
-                paraNode = paraNode.parentElement.firstChild as Node;
-              }
-              const range = document.createRange();
-              range.selectNodeContents(paraNode.parentElement || node.parentElement!);
-              const text = range.toString();
-              const startChar = idx.startChar.get(node) || 0;
-              const endChar = startChar + text.length;
-              selStartCharRef.current = startChar;
-              selEndCharRef.current = endChar;
-              selectionLockRef.current = true;
-              dragHandleRef.current = null;
-              recomputeSelection();
-            }
-            tapCount = 0;
-          }
-        }
-      }
-
-      cancelLongPress();
-    };
-
-    const onCancel = () => cancelLongPress();
-    const onLeave = () => cancelLongPress();
-
-    // Pointer Events only (see note above; touch listeners removed to avoid
-    // double-firing every gesture).
-    el.addEventListener('pointerdown', onDown, { passive: true });
-    el.addEventListener('pointerup', onUp, { passive: true });
-    el.addEventListener('pointercancel', onCancel, { passive: true });
-    el.addEventListener('pointerleave', onLeave, { passive: true });
-    return () => {
-      cancelLongPress();
-      el.removeEventListener('pointerdown', onDown);
-      el.removeEventListener('pointerup', onUp);
-      el.removeEventListener('pointercancel', onCancel);
-      el.removeEventListener('pointerleave', onLeave);
-    };
-  }, [isOpen]);
-
-  // Helper to detect block-level elements for paragraph selection
-  const isBlockElement = (el: Element): boolean => {
-    const tag = el.tagName.toLowerCase();
-    return ['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'blockquote', 'pre', 'section', 'article'].includes(tag);
-  };
-
-  // Keep a ref mirror of the active overlay boxes for the non-rendering
-  // dismiss-tap handler.
-  useEffect(() => {
-    activeSelBoxesRef.current = activeSelBoxes;
-  }, [activeSelBoxes]);
-
-  // Handle drag: while a handle is being dragged, track pointer on the window
-  // so the drag isn't lost if the finger leaves the handle element.
-  useEffect(() => {
-    if (!isOpen) return;
-    const onMove = (e: PointerEvent) => {
-      if (dragHandleRef.current && onDragMoveRef.current) {
-        onDragMoveRef.current(e.clientX, e.clientY);
-      }
-    };
-    const onUp = () => {
-      if (dragHandleRef.current && onDragEndRef.current) {
-        onDragEndRef.current();
-      }
-    };
-    window.addEventListener('pointermove', onMove, { passive: true });
-    window.addEventListener('pointerup', onUp, { passive: true });
-    window.addEventListener('pointercancel', onUp, { passive: true });
-    return () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
-    };
-  }, [isOpen]);
-
-  // Update selection overlay (handles + toolbar) on scroll so they stay
-  // aligned with the selected text. Throttled to avoid excessive recomputes.
-  useEffect(() => {
-    if (!isOpen) return;
-    const el = contentContainerRef.current;
-    if (!el) return;
-    let ticking = false;
-    const onScroll = () => {
-      if (!selectionLockRef.current) return;
-      if (ticking) return;
-      ticking = true;
-      requestAnimationFrame(() => {
-        ticking = false;
-        recomputeSelection();
-      });
-    };
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
-  }, [isOpen]);
-
-  // Dismiss the locked selection when tapping anywhere outside of it / the
-  // toolbar / the handles (Moon+ style: selection stays until you touch elsewhere).
-  useEffect(() => {
-    if (!isOpen) return;
-    const el = contentContainerRef.current;
-    if (!el) return;
-    const onDown = (e: PointerEvent | TouchEvent) => onDismissTapRef.current(e);
-    el.addEventListener('pointerdown', onDown, { passive: true });
-    el.addEventListener('touchstart', onDown, { passive: true });
-    return () => {
-      el.removeEventListener('pointerdown', onDown);
-      el.removeEventListener('touchstart', onDown);
-    };
-  }, [isOpen]);
-
-  // Clear the custom selection when the chapter or a layout-affecting setting
-  // changes (the overlay coords would otherwise become stale / misaligned).
-  useEffect(() => {
-    if (!isOpen) return;
-    if (selectionLockRef.current) clearSelectionState();
-  }, [isOpen, currentChapterIndex, settings.fontSize, settings.lineHeight, settings.columnWidth, settings.fontFamily]);
 
   // Keep annotations in sync with edits/deletes made in the global BookNotesModal
   useEffect(() => {
@@ -592,6 +381,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     sessionStartRef.current = Date.now();
     sessionSecondsRef.current = 0;
     lastFlushedSecondsRef.current = 0;
+    sessionStartScrollRef.current = scrollProgress;
     setSessionReadingSeconds(0);
 
     const timer = setInterval(() => {
@@ -641,6 +431,10 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
 
       // Record a discrete session log if user read for at least 3 seconds
       if (sessionSecondsRef.current >= 3) {
+        const wordsInChapter = readingStats.words;
+        const scrollDelta = Math.abs(scrollProgress - sessionStartScrollRef.current) / 100;
+        const wordsRead = Math.round(wordsInChapter * scrollDelta);
+
         recordReadingSession({
           bookId: currentBook.id,
           bookTitle: currentBook.title,
@@ -649,6 +443,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
           chapterIndex: currentChapterIndex,
           chapterTitle: currentChapterTitle,
           durationSeconds: sessionSecondsRef.current,
+          wordsRead: wordsRead > 0 ? wordsRead : undefined,
           startTimestamp: sessionStartRef.current,
           endTimestamp: Date.now(),
           scrollPercentage: scrollProgress,
@@ -839,498 +634,335 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     updateEbookReadingPosition(currentBook.id, currentChapterIndex, progress);
     updateCachedPosition(currentBook.id, currentChapterIndex, progress);
 
-    // Keep the custom selection alive on scroll and let the rAF recompute
-    // effect re-aim the handles/toolbar at the selected text (Moon+ style),
-    // so minor finger-drift during a long-press can't wipe a fresh selection.
     if (activeHighlightPopup) setActiveHighlightPopup(null);
-  };
-
-  // ── Custom (Moon+ style) selection: drawn in JS, never uses the WebView's
-  //    native selection. The visible highlight + draggable handles are our own
-  //    overlay; the whole thing persists until dismissed. ──────────────────
-  // Return the text node + offset for a global character index (binary search).
-  const nodeAndOffset = (char: number) => {
-    const idx = charIndexRef.current;
-    if (!idx) return { node: null as Text | null, offset: 0 };
-    const arr = idx.nodes;
-    if (arr.length === 0) return { node: null as Text | null, offset: 0 };
-    let lo = 0;
-    let hi = arr.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (idx.startChar.get(arr[mid])! > char) hi = mid;
-      else lo = mid + 1;
-    }
-    const node = arr[Math.max(0, lo - 1)];
-    const base = idx.startChar.get(node)!;
-    const len = (node.nodeValue || '').length;
-    const offset = Math.max(0, Math.min(len, char - base));
-    return { node, offset };
-  };
-
-  // Build a DOM Range from two global character indices.
-  const rangeFromChars = (start: number, end: number): Range | null => {
-    const a = Math.min(start, end);
-    const b = Math.max(start, end);
-    const { node: aNode, offset: aOff } = nodeAndOffset(a);
-    const { node: bNode, offset: bOff } = nodeAndOffset(b);
-    if (!aNode || !bNode) return null;
-    try {
-      const r = document.createRange();
-      r.setStart(aNode, aOff);
-      r.setEnd(bNode, bOff);
-      return r;
-    } catch {
-      return null;
+    if (selectionMenu && selectionRangeRef.current) {
+      // Re-position floating menu smoothly on scroll instead of wiping selection
+      requestAnimationFrame(() => showSelectionMenuFromNative());
     }
   };
 
-  // Caret rect (viewport coords) at a specific character boundary.
-  const caretRectAt = (char: number): DOMRect | null => {
-    const { node, offset } = nodeAndOffset(char);
-    if (!node) return null;
-    try {
-      const r = document.createRange();
-      r.setStart(node, offset);
-      r.setEnd(node, offset);
-      const rect = r.getBoundingClientRect();
-      r.detach?.();
-      return rect;
-    } catch {
-      return null;
+  // Clear native selection + hide floating menu.
+  const clearSelectionState = useCallback(() => {
+    if (selectionClearTimerRef.current) {
+      clearTimeout(selectionClearTimerRef.current);
+      selectionClearTimerRef.current = null;
     }
-  };
-
-  // Hit-test a viewport point to a global character index.
-  // Optimized: binary search within the line's text nodes for O(log n) instead of O(n).
-  const charAtPoint = (clientX: number, clientY: number): number => {
-    const idx = charIndexRef.current;
-    if (!idx) return -1;
-    let best = -1;
-    let bestDist = Infinity;
-
-    // First pass: find candidate text nodes whose line boxes contain the Y coordinate
-    const candidates: { node: Text; start: number; rects: DOMRect[] }[] = [];
-    for (const node of idx.nodes) {
-      const text = node.nodeValue || '';
-      if (!text) continue;
-      const full = document.createRange();
-      full.selectNodeContents(node);
-      const rects: DOMRect[] = [];
-      for (const r of full.getClientRects()) {
-        if (r.width === 0 && r.height === 0) continue;
-        if (clientY >= r.top - 8 && clientY <= r.bottom + 8) {
-          rects.push(r);
-        }
-      }
-      full.detach?.();
-      if (rects.length > 0) {
-        candidates.push({ node, start: idx.startChar.get(node)!, rects });
-      }
-    }
-
-    if (candidates.length === 0) return -1;
-
-    // For each candidate, binary search the character position
-    for (const { node, start, rects } of candidates) {
-      const text = node.nodeValue || '';
-      const len = text.length;
-      if (len === 0) continue;
-
-      let lo = 0;
-      let hi = len;
-      let localBest = 0;
-      let localBestDist = Infinity;
-
-      while (lo <= hi) {
-        const mid = (lo + hi) >> 1;
-        const r = document.createRange();
-        r.setStart(node, mid);
-        r.setEnd(node, mid);
-        const rect = r.getBoundingClientRect();
-        r.detach?.();
-        const dist = Math.hypot(clientX - rect.left, clientY - rect.top);
-        if (dist < localBestDist) {
-          localBestDist = dist;
-          localBest = mid;
-        }
-        // Determine search direction by comparing X
-        if (clientX < rect.left) {
-          hi = mid - 1;
-        } else {
-          lo = mid + 1;
-        }
-      }
-
-      // Fine-tune: check neighbors of binary search result
-      const checkRange = Math.min(3, len);
-      for (let i = Math.max(0, localBest - checkRange); i <= Math.min(len, localBest + checkRange); i++) {
-        const r = document.createRange();
-        r.setStart(node, i);
-        r.setEnd(node, i);
-        const rect = r.getBoundingClientRect();
-        r.detach?.();
-        const dist = Math.hypot(clientX - rect.left, clientY - rect.top);
-        if (dist < bestDist) {
-          bestDist = dist;
-          best = start + i;
-        }
-      }
-      if (bestDist < 3) break; // tight match found
-    }
-
-    if (best === -1) {
-      // Fallback: the tap landed on a line entirely covered by `<mark>`
-      // (existing highlights / search matches) which the unmarked index skips.
-      // Find the tapped caret over ALL text nodes, then return the nearest
-      // unmarked offset so a new selection can still start there.
-      const article = articleRef.current;
-      if (article) {
-        const w = document.createTreeWalker(article, NodeFilter.SHOW_TEXT, null);
-        const allNodes: Text[] = [];
-        let n: Node | null;
-        while ((n = w.nextNode())) {
-          const t = n as Text;
-          if ((t.nodeValue || '').length) allNodes.push(t);
-        }
-        let unmarkedSoFar = 0;
-        let fallbackOffset = -1;
-        let fallbackBestDist = Infinity;
-        for (const t of allNodes) {
-          const v = t.nodeValue || '';
-          const parent = t.parentElement;
-          const inMark =
-            !!parent && parent.tagName.toLowerCase() === 'mark';
-          const full = document.createRange();
-          full.selectNodeContents(t);
-          let onLine = false;
-          for (const r of full.getClientRects()) {
-            if (r.width === 0 && r.height === 0) continue;
-            if (clientY >= r.top - 8 && clientY <= r.bottom + 8) {
-              onLine = true;
-              break;
-            }
-          }
-          full.detach?.();
-          if (!onLine) {
-            if (!inMark) unmarkedSoFar += v.length;
-            continue;
-          }
-          let localBest = 0;
-          let localBestDist = Infinity;
-          for (let i = 0; i <= v.length; i++) {
-            const r = document.createRange();
-            r.setStart(t, i);
-            r.setEnd(t, i);
-            const rect = r.getBoundingClientRect();
-            r.detach?.();
-            const d = Math.hypot(clientX - rect.left, clientY - rect.top);
-            if (d < localBestDist) {
-              localBestDist = d;
-              localBest = i;
-            }
-          }
-          const cand = unmarkedSoFar + (inMark ? 0 : localBest);
-          if (localBestDist < fallbackBestDist) {
-            fallbackBestDist = localBestDist;
-            fallbackOffset = cand;
-          }
-          if (!inMark) unmarkedSoFar += v.length;
-        }
-        return fallbackOffset;
-      }
-    }
-
-    return best;
-  };
-
-  const isWordChar = (ch: string | undefined) =>
-    ch != null && ch.length > 0 && /[\p{L}\p{N}]/u.test(ch);
-
-  // Expand from a character index to word boundaries.
-  // If the index lands on whitespace/punctuation, expand to the nearest word.
-  const expandToWord = (text: string, i: number): [number, number] => {
-    if (i < 0 || i >= text.length) return [i, i];
-    // If on a word char, expand normally
-    if (isWordChar(text[i])) {
-      let s = i;
-      while (s > 0 && isWordChar(text[s - 1])) s--;
-      let e = i;
-      while (e < text.length - 1 && isWordChar(text[e + 1])) e++;
-      return [s, e];
-    }
-    // On whitespace/punctuation: look left and right for nearest word
-    let leftWordEnd = -1;
-    for (let j = i - 1; j >= 0; j--) {
-      if (isWordChar(text[j])) {
-        leftWordEnd = j;
-        break;
-      }
-    }
-    let rightWordStart = -1;
-    for (let j = i; j < text.length; j++) {
-      if (isWordChar(text[j])) {
-        rightWordStart = j;
-        break;
-      }
-    }
-    if (leftWordEnd >= 0 && rightWordStart >= 0) {
-      // Between two words - pick closer one
-      const distLeft = i - leftWordEnd;
-      const distRight = rightWordStart - i;
-      if (distLeft <= distRight) {
-        let s = leftWordEnd;
-        while (s > 0 && isWordChar(text[s - 1])) s--;
-        let e = leftWordEnd;
-        while (e < text.length - 1 && isWordChar(text[e + 1])) e++;
-        return [s, e];
-      } else {
-        let s = rightWordStart;
-        while (s > 0 && isWordChar(text[s - 1])) s--;
-        let e = rightWordStart;
-        while (e < text.length - 1 && isWordChar(text[e + 1])) e++;
-        return [s, e];
-      }
-    }
-    if (leftWordEnd >= 0) {
-      let s = leftWordEnd;
-      while (s > 0 && isWordChar(text[s - 1])) s--;
-      let e = leftWordEnd;
-      while (e < text.length - 1 && isWordChar(text[e + 1])) e++;
-      return [s, e];
-    }
-    if (rightWordStart >= 0) {
-      let s = rightWordStart;
-      while (s > 0 && isWordChar(text[s - 1])) s--;
-      let e = rightWordStart;
-      while (e < text.length - 1 && isWordChar(text[e + 1])) e++;
-      return [s, e];
-    }
-    return [i, i];
-  };
-
-  // Re-derive overlay boxes + handles + toolbar from the current char range.
-  const recomputeSelection = () => {
-    const idx = charIndexRef.current;
-    if (!selectionLockRef.current || !idx) return;
-    const a = Math.min(selStartCharRef.current, selEndCharRef.current);
-    const b = Math.max(selStartCharRef.current, selEndCharRef.current);
-    if (a < 0 || b < 0) return;
-    const range = rangeFromChars(a, b + 1);
-    if (!range) return;
-
-    // Anchor to the content wrapper (the `relative` positioning context of the
-    // overlay). Using the wrapper's own rect accounts for scroll automatically,
-    // so the boxes stay glued to the text as the page scrolls.
-    const wrapper = contentWrapperRef.current;
-    if (!wrapper) return;
-    const wr = wrapper.getBoundingClientRect();
-
-    const boxes: { top: number; left: number; width: number; height: number }[] = [];
-    let minTop = Infinity;
-    let maxBottom = -Infinity;
-    let minLeft = Infinity;
-    let maxRight = -Infinity;
-    for (const r of range.getClientRects()) {
-      if (r.width === 0 && r.height === 0) continue;
-      boxes.push({
-        top: r.top - wr.top,
-        left: r.left - wr.left,
-        width: r.width,
-        height: r.height,
-      });
-      if (r.top < minTop) minTop = r.top;
-      if (r.bottom > maxBottom) maxBottom = r.bottom;
-      if (r.left < minLeft) minLeft = r.left;
-      if (r.right > maxRight) maxRight = r.right;
-    }
-    setActiveSelBoxes(boxes);
-    activeSelBoxesRef.current = boxes;
-
-    // Toolbar (viewport coords).
-    let text = idx.text.substring(a, b + 1).replace(/\s+/g, ' ');
-    text = text.trim();
-    if (!text) text = idx.text.substring(a, b + 1);
-    const union = { left: minLeft, right: maxRight, top: minTop, bottom: maxBottom };
-    if (minTop !== Infinity) {
-      const rect = { left: union.left, width: union.right - union.left, top: minTop, height: maxBottom - minTop };
-      const menuPos = {
-        visible: true as const,
-        x: Math.max(20, Math.min(window.innerWidth - 280, rect.left + rect.width / 2 - 130)),
-        y: Math.max(70, rect.top - 54),
-        text,
-      };
-      setSelectionMenu(menuPos);
-    }
-
-    // Handle positions (viewport coords) at the selection boundaries: start
-    // handle before the first char, end handle after the last char.
-    const startRect = caretRectAt(a);
-    const endRect = caretRectAt(b + 1);
-    if (startRect && endRect) {
-      setHandlePos({
-        start: { x: startRect.left, y: startRect.top },
-        end: { x: endRect.left + endRect.width, y: endRect.top },
-      });
-    } else {
-      setHandlePos(null);
-    }
-    range.detach?.();
-  };
-
-  // Start a custom selection from a viewport point (center of the content).
-  const startSelectionAtCenter = () => {
-    // Ensure char index exists; rebuild if needed (e.g., early click before effect runs).
-    if (!charIndexRef.current) {
-      rebuildCharIndex();
-    }
-    if (!charIndexRef.current) {
-      console.warn('[select] charIndex still null after rebuild');
-      return;
-    }
-
-    const el = contentContainerRef.current;
-    if (!el) return;
-
-    // Try center first
-    let rect = el.getBoundingClientRect();
-    let clientX = rect.left + rect.width / 2;
-    let clientY = rect.top + rect.height / 2;
-    let c = charAtPoint(clientX, clientY);
-
-    // If center misses (margin, image, etc.), scan downward for first text line
-    if (c < 0) {
-      const step = 24;
-      const maxY = rect.bottom - 20;
-      clientY = rect.top + 40; // start below header
-      while (clientY < maxY) {
-        c = charAtPoint(clientX, clientY);
-        if (c >= 0) break;
-        clientY += step;
-      }
-    }
-
-    // If still no hit, try scanning across the width at a few Y positions
-    if (c < 0) {
-      const scanYs = [rect.top + 60, rect.top + rect.height * 0.3, rect.top + rect.height * 0.5];
-      for (const y of scanYs) {
-        for (let x = rect.left + 20; x < rect.right - 20; x += 40) {
-          c = charAtPoint(x, y);
-          if (c >= 0) { clientX = x; clientY = y; break; }
-        }
-        if (c >= 0) break;
-      }
-    }
-
-    if (c < 0) {
-      console.warn('[select] no selectable text found in viewport');
-      return;
-    }
-
-    startSelection(clientX, clientY);
-  };
-
-  // Start a custom selection from a long-press at a viewport point.
-  const startSelection = (clientX: number, clientY: number) => {
-    const idx = charIndexRef.current;
-    if (!idx) return;
-    const c = charAtPoint(clientX, clientY);
-    if (c < 0) return;
-    // Clear any native DOM selection so the WebView's own highlight can't
-    // coexist with (and compete against) our custom overlay.
-    window.getSelection()?.removeAllRanges();
-    const [ws, we] = expandToWord(idx.text, c);
-    selStartCharRef.current = ws;
-    selEndCharRef.current = we;
-    selectionLockRef.current = true;
-    dragHandleRef.current = null;
-    recomputeSelection();
-  };
-
-  // Enter a drag on one of the handles; pointermove (via onDragMoveRef) will
-  // call updateDragBoundary. Uses window listeners so the drag isn't lost if
-  // the finger leaves the handle element.
-  const beginHandleDrag = (which: 'start' | 'end') => {
-    if (!selectionLockRef.current) return;
-    dragHandleRef.current = which;
-    onDragMoveRef.current = (clientX: number, clientY: number) => {
-      const idx = charIndexRef.current;
-      if (!idx) return;
-      let c = charAtPoint(clientX, clientY);
-      if (c < 0) return;
-      // During drag, use exact character position (no word expansion) for smooth,
-      // precise control. Word expansion happens on drag END.
-      if (dragHandleRef.current === 'start') selStartCharRef.current = c;
-      else if (dragHandleRef.current === 'end') selEndCharRef.current = c;
-      recomputeSelection();
-    };
-    onDragEndRef.current = () => {
-      // On release, snap the dragged handle to word boundary for nicer UX
-      const idx = charIndexRef.current;
-      if (idx && dragHandleRef.current) {
-        const { text } = idx;
-        if (dragHandleRef.current === 'start') {
-          const [ws] = expandToWord(text, selStartCharRef.current);
-          selStartCharRef.current = ws;
-        } else {
-          const [, we] = expandToWord(text, selEndCharRef.current);
-          selEndCharRef.current = we;
-        }
-        recomputeSelection();
-      }
-      dragHandleRef.current = null;
-      onDragMoveRef.current = null;
-      onDragEndRef.current = () => {};
-    };
-  };
-
-  const clearSelectionState = () => {
-    setSelectionMenu(null);
-    setActiveSelBoxes([]);
-    setHandlePos(null);
-    selectionLockRef.current = false;
-    selStartCharRef.current = -1;
-    selEndCharRef.current = -1;
-    dragHandleRef.current = null;
-    longPressArmedRef.current = false;
     if (longPressTimerRef.current) {
-      window.clearTimeout(longPressTimerRef.current);
+      clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
-  };
+    isHoldSelectingRef.current = false;
+    holdAnchorRef.current = null;
+    handleDragRef.current = null;
+    setActiveDraggingHandle(null);
+    selectionRangeRef.current = null;
+    setSelectionMenu(null);
+    window.getSelection()?.removeAllRanges();
+  }, []);
 
-  // Wire the stable gesture refs to the implementations above.
-  onLongPressRef.current = (x, y) => startSelection(x, y);
+  // Show the floating menu from the browser's native selection or active stored range.
+  const showSelectionMenuFromNative = useCallback(() => {
+    const sel = window.getSelection();
+    let range: Range | null = null;
+    if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
+      range = sel.getRangeAt(0);
+    } else if (selectionRangeRef.current && !selectionRangeRef.current.collapsed) {
+      range = selectionRangeRef.current;
+    }
+    if (!range) return;
 
-  // Dismiss-on-tap-outside handler (used by the pointer/touch effect below).
-  onDismissTapRef.current = (e: PointerEvent | TouchEvent) => {
-    if (!selectionLockRef.current) return;
-    if (dragHandleRef.current) return;
-    const target = e.target as HTMLElement;
-    if (target.closest('#reader-floating-selection-menu')) return;
-    if (target.closest('.libriaudio-sel-handle')) return;
-    // A tap on the selected text itself keeps the selection open so the
-    // handles can be grabbed repeatedly; anywhere else dismisses it.
-    const boxes = activeSelBoxesRef.current;
-    let inside = false;
-    const { clientX, clientY } = 'touches' in e
-      ? { clientX: e.changedTouches[0]?.clientX || 0, clientY: e.changedTouches[0]?.clientY || 0 }
-      : { clientX: e.clientX, clientY: e.clientY };
-    if (boxes && boxes.length > 0) {
-      const wrapper = contentWrapperRef.current;
-      if (wrapper) {
-        const wr = wrapper.getBoundingClientRect();
-        const cx = clientX - wr.left;
-        const cy = clientY - wr.top;
-        const pad = 20;
-        inside = boxes.some(
-          (b) =>
-            cx >= b.left - pad && cx <= b.left + b.width + pad && cy >= b.top - pad && cy <= b.top + b.height + pad
-        );
+    const text = range.toString().trim();
+    if (!text) return;
+    const rect = range.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return;
+
+    let startChar: number | undefined;
+    let endChar: number | undefined;
+
+    const articleEl = articleRef.current;
+    if (articleEl) {
+      const offsets = getSelectionOffsets(range, articleEl);
+      if (offsets) {
+        startChar = offsets.start;
+        endChar = offsets.end;
       }
     }
-    if (!inside) clearSelectionState();
-  };
+
+    // Compute handle positions from the selection's start/end carets (hang down from line bottom)
+    const startCaret = getRangeBoundaryCaretRect(range, 'start');
+    const endCaret = getRangeBoundaryCaretRect(range, 'end');
+
+    const handleStart = startCaret || { x: rect.left, y: rect.bottom };
+    const handleEnd = endCaret || { x: rect.right, y: rect.bottom };
+
+    const menuPos = calculateMenuPosition(rect, 320, 48);
+
+    selectionRangeRef.current = range.cloneRange();
+    setSelectionMenu({
+      visible: true,
+      x: menuPos.x,
+      y: menuPos.y,
+      text,
+      startChar,
+      endChar,
+      handleStart,
+      handleEnd,
+    });
+  }, []);
+
+  // Handle drag to extend / adjust selection
+  const onHandleDragStart = useCallback((which: 'start' | 'end', clientX: number, clientY: number, e?: React.SyntheticEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    const sel = window.getSelection();
+    let range = selectionRangeRef.current;
+    if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
+      range = sel.getRangeAt(0);
+    }
+    if (!range) return;
+
+    const anchorContainer = which === 'start' ? range.endContainer : range.startContainer;
+    const anchorOffset = which === 'start' ? range.endOffset : range.startOffset;
+    handleDragRef.current = { which, anchorContainer, anchorOffset };
+    setActiveDraggingHandle(which);
+  }, []);
+
+  const onHandleDragMove = useCallback((clientX: number, clientY: number) => {
+    const drag = handleDragRef.current;
+    if (!drag) return;
+
+    // Sample 24px above the finger (into the stem/text line) so it hits the actual text rather than the handle bulb
+    const sampleY = clientY - 24;
+    const pos = getCaretPositionFromCoordinates(clientX, sampleY, articleRef.current);
+    if (!pos || !pos.node) return;
+
+    let targetNode = pos.node;
+    let targetOffset = pos.offset;
+
+    // Prevent collapsing or inverting the anchor handle
+    if (drag.which === 'end') {
+      if (targetNode === drag.anchorContainer && targetOffset <= drag.anchorOffset) {
+        targetOffset = Math.min((drag.anchorContainer.textContent?.length || drag.anchorOffset + 1), drag.anchorOffset + 1);
+      }
+    } else if (drag.which === 'start') {
+      if (targetNode === drag.anchorContainer && targetOffset >= drag.anchorOffset) {
+        targetOffset = Math.max(0, drag.anchorOffset - 1);
+      }
+    }
+
+    const updatedRange = createOrderedRange(drag.anchorContainer, drag.anchorOffset, targetNode, targetOffset);
+    if (updatedRange && !updatedRange.collapsed) {
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(updatedRange);
+      selectionRangeRef.current = updatedRange.cloneRange();
+      showSelectionMenuFromNative();
+    }
+  }, [showSelectionMenuFromNative]);
+
+  const onHandleDragEnd = useCallback(() => {
+    handleDragRef.current = null;
+    setActiveDraggingHandle(null);
+    showSelectionMenuFromNative();
+  }, [showSelectionMenuFromNative]);
+
+  // Global pointer & touch listeners for selection handle dragging
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!handleDragRef.current) return;
+      // When dragging a selection handle, pointer capture retargets the event
+      // to the handle element (which lives outside <article>). The containment
+      // check below would wrongly block extension, so only apply it to
+      // non-handle gestures. During a handle drag we always extend.
+      onHandleDragMove(e.clientX, e.clientY);
+    };
+    const onPointerUp = () => {
+      if (handleDragRef.current) {
+        onHandleDragEnd();
+      }
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (handleDragRef.current && e.touches[0]) {
+        if (e.cancelable) e.preventDefault();
+        onHandleDragMove(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    };
+    const onTouchEnd = () => {
+      if (handleDragRef.current) {
+        onHandleDragEnd();
+      }
+    };
+
+    // Attach listeners
+    window.addEventListener('pointermove', onPointerMove, { passive: true });
+    window.addEventListener('pointerup', onPointerUp, { passive: true });
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('touchend', onTouchEnd, { passive: true });
+  }, [isOpen, onHandleDragMove, onHandleDragEnd]);
+
+  // Hold-to-select and Drag-to-select gestures on manuscript text
+  const handleReaderPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    if (
+      target.closest('.reader-select-handle') ||
+      target.closest('#reader-floating-selection-menu') ||
+      target.closest('.libriaudio-hl') ||
+      target.closest('button') ||
+      target.closest('input')
+    ) {
+      return;
+    }
+
+    pointerDownPosRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
+
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+    }
+
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTimerRef.current = null;
+      if (!pointerDownPosRef.current) return;
+
+      const wordRange = getWordRangeAtPoint(
+        pointerDownPosRef.current.x,
+        pointerDownPosRef.current.y,
+        articleRef.current
+      );
+
+      if (wordRange && !wordRange.collapsed) {
+        isHoldSelectingRef.current = true;
+        holdAnchorRef.current = {
+          node: wordRange.startContainer,
+          offset: wordRange.startOffset,
+        };
+
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(wordRange);
+        selectionRangeRef.current = wordRange.cloneRange();
+
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          try {
+            navigator.vibrate(35);
+          } catch {
+            // ignore
+          }
+        }
+
+        showSelectionMenuFromNative();
+      }
+    }, 320);
+  }, [showSelectionMenuFromNative]);
+
+  const handleReaderPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isHoldSelectingRef.current) {
+      if (pointerDownPosRef.current && longPressTimerRef.current) {
+        const dist = Math.hypot(
+          e.clientX - pointerDownPosRef.current.x,
+          e.clientY - pointerDownPosRef.current.y
+        );
+        if (dist > 8) {
+          clearTimeout(longPressTimerRef.current);
+          longPressTimerRef.current = null;
+        }
+      }
+      return;
+    }
+
+    // Is hold selecting: dynamically expand selection to current pointer position
+    e.preventDefault();
+    const pos = getCaretPositionFromCoordinates(e.clientX, e.clientY, articleRef.current);
+    if (!pos || !holdAnchorRef.current) return;
+
+    const newRange = createOrderedRange(
+      holdAnchorRef.current.node,
+      holdAnchorRef.current.offset,
+      pos.node,
+      pos.offset
+    );
+
+    if (newRange && !newRange.collapsed) {
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(newRange);
+      selectionRangeRef.current = newRange.cloneRange();
+      showSelectionMenuFromNative();
+    }
+  }, [showSelectionMenuFromNative]);
+
+  const handleReaderPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+
+    if (isHoldSelectingRef.current) {
+      isHoldSelectingRef.current = false;
+      holdAnchorRef.current = null;
+      showSelectionMenuFromNative();
+      return;
+    }
+
+    // Quick tap dismissal when clicking blank body text outside selection
+    if (pointerDownPosRef.current && selectionMenu) {
+      const dist = Math.hypot(
+        e.clientX - pointerDownPosRef.current.x,
+        e.clientY - pointerDownPosRef.current.y
+      );
+      const elapsed = Date.now() - pointerDownPosRef.current.time;
+
+      const target = e.target as HTMLElement;
+      if (
+        dist < 8 &&
+        elapsed < 300 &&
+        !target.closest('#reader-floating-selection-menu') &&
+        !target.closest('.reader-select-handle') &&
+        !target.closest('.libriaudio-hl') &&
+        !target.closest('button')
+      ) {
+        clearSelectionState();
+      }
+    }
+
+    pointerDownPosRef.current = null;
+  }, [selectionMenu, showSelectionMenuFromNative, clearSelectionState]);
+
+  const handleReaderPointerCancel = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    isHoldSelectingRef.current = false;
+    holdAnchorRef.current = null;
+    pointerDownPosRef.current = null;
+  }, []);
+
+  // Show floating toolbar on native text selection
+  useEffect(() => {
+    if (!isOpen) return;
+    const onSelectionChange = () => {
+      // Don't disturb active handle dragging or hold selecting
+      if (handleDragRef.current || isHoldSelectingRef.current) return;
+
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount) {
+        return;
+      }
+      const text = sel.toString().trim();
+      if (!text) return;
+
+      requestAnimationFrame(() => showSelectionMenuFromNative());
+    };
+    document.addEventListener('selectionchange', onSelectionChange);
+    return () => {
+      document.removeEventListener('selectionchange', onSelectionChange);
+      if (selectionClearTimerRef.current) clearTimeout(selectionClearTimerRef.current);
+    };
+  }, [isOpen, showSelectionMenuFromNative]);
 
   const handleDictionaryLookup = async (rawText: string) => {
     const word = extractLookupWord(rawText);
@@ -1339,14 +971,30 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     clearSelectionState();
   };
 
+  // Helper to extract offsets from selection menu or live range
+  const getEffectiveSelectionOffsets = () => {
+    let startChar = selectionMenu?.startChar;
+    let endChar = selectionMenu?.endChar;
+    if (typeof startChar !== 'number' || typeof endChar !== 'number') {
+      if (selectionRangeRef.current && articleRef.current) {
+        const offsets = getSelectionOffsets(selectionRangeRef.current, articleRef.current);
+        if (offsets) {
+          startChar = offsets.start;
+          endChar = offsets.end;
+        }
+      }
+    }
+    return { startChar, endChar };
+  };
+
   // Create Highlight
   const createHighlight = (color: HighlightColor) => {
     if (!selectionMenu || !selectionMenu.text) return;
     const currentChapterTitle =
       currentBook.ebookChapters?.[currentChapterIndex]?.title ||
       `Chapter ${currentChapterIndex + 1}`;
-    const hasOffsets =
-      selStartCharRef.current >= 0 && selEndCharRef.current >= 0;
+    const { startChar, endChar } = getEffectiveSelectionOffsets();
+    const hasOffsets = typeof startChar === 'number' && typeof endChar === 'number';
 
     const newAnnotation: EbookAnnotation = {
       id: `ann_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
@@ -1356,9 +1004,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
       text: selectionMenu.text,
       color,
       createdAt: Date.now(),
-      ...(hasOffsets
-        ? { startChar: selStartCharRef.current, endChar: selEndCharRef.current }
-        : {}),
+      ...(hasOffsets ? { startChar, endChar } : {}),
     };
 
     saveAnnotations([...annotations, newAnnotation]);
@@ -1371,8 +1017,8 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     const chapterTitle =
       currentBook.ebookChapters?.[currentChapterIndex]?.title ||
       `Chapter ${currentChapterIndex + 1}`;
-    const hasOffsets =
-      selStartCharRef.current >= 0 && selEndCharRef.current >= 0;
+    const { startChar, endChar } = getEffectiveSelectionOffsets();
+    const hasOffsets = typeof startChar === 'number' && typeof endChar === 'number';
 
     const newAnnotation: EbookAnnotation = {
       id: `ann_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
@@ -1382,9 +1028,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
       text: selectionMenu.text,
       color: 'gold',
       createdAt: Date.now(),
-      ...(hasOffsets
-        ? { startChar: selStartCharRef.current, endChar: selEndCharRef.current }
-        : {}),
+      ...(hasOffsets ? { startChar, endChar } : {}),
     };
     saveAnnotations([...annotations, newAnnotation]);
 
@@ -1406,14 +1050,18 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
   // Open Note Creator from selection
   const openNoteFromSelection = () => {
     if (!selectionMenu || !selectionMenu.text) return;
+    const { startChar, endChar } = getEffectiveSelectionOffsets();
+    const hasOffsets = typeof startChar === 'number' && typeof endChar === 'number';
     setNoteDialog({
       isOpen: true,
       text: selectionMenu.text,
       note: '',
       color: 'gold',
+      ...(hasOffsets ? { startChar, endChar } : {}),
     });
-    setSelectionMenu(null);
+    clearSelectionState();
   };
+
 
   // Save Note Dialog
   const handleSaveNote = () => {
@@ -1446,13 +1094,16 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
         color: noteDialog.color,
         note: noteDialog.note.trim(),
         createdAt: Date.now(),
+        ...(typeof noteDialog.startChar === 'number' && typeof noteDialog.endChar === 'number'
+          ? { startChar: noteDialog.startChar, endChar: noteDialog.endChar }
+          : {}),
       };
       saveAnnotations([...annotations, newAnn]);
       if (newAnn.note) syncAnnotationToNoteStorage(newAnn);
     }
 
     setNoteDialog(null);
-    window.getSelection()?.removeAllRanges();
+    clearSelectionState();
   };
 
   // Delete Annotation
@@ -1557,7 +1208,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     setCopiedState(true);
     setTimeout(() => {
       setCopiedState(false);
-      setSelectionMenu(null);
+      clearSelectionState();
     }, 1200);
   };
 
@@ -1674,117 +1325,75 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
         }
       });
 
-      // 2. Highlights + search marks, injected into clean text nodes (avoids
-      //    corrupting image tags or attributes).
+      // 2. Highlights + search marks, injected into clean text nodes
       const currentChapterAnn = annotations.filter(
         (a) => a.chapterIndex === currentChapterIndex
       );
       const hasSearch = searchQuery.trim().length > 1;
-      // Newer annotations carry precise character offsets; older ones (saved
-      // before offsets existed) fall back to text-matching.
-      const offsetAnn = currentChapterAnn.filter(
-        (a) => typeof a.startChar === 'number' && typeof a.endChar === 'number'
-      );
-      const legacyAnn = currentChapterAnn.filter(
-        (a) => !(typeof a.startChar === 'number' && typeof a.endChar === 'number')
-      );
 
       if (currentChapterAnn.length > 0 || hasSearch) {
-        const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, null);
-        const textNodes: Text[] = [];
-        let node: Node | null;
-        while ((node = walker.nextNode())) {
-          const parent = node.parentElement;
+        // Build the flattened text + node mapping over the current DOM
+        const w2 = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, null);
+        const parts: { node: Text; start: number; end: number }[] = [];
+        let flat = '';
+        let n2: Node | null;
+        while ((n2 = w2.nextNode())) {
+          const t = n2 as Text;
+          const v = t.nodeValue || '';
+          if (!v) continue;
+          const parent = t.parentElement;
           if (
             parent &&
-            !['script', 'style', 'mark', 'button', 'noscript'].includes(
+            ['mark', 'script', 'style', 'button', 'noscript'].includes(
               parent.tagName.toLowerCase()
             )
           ) {
-            textNodes.push(node as Text);
+            continue;
           }
+          parts.push({ node: t, start: flat.length, end: flat.length + v.length });
+          flat += v;
         }
 
-        // ---- Legacy text-match highlighting (annotations without offsets) ----
-        if (legacyAnn.length > 0) {
-          const sorted = [...legacyAnn].sort((a, b) => b.text.length - a.text.length);
-          textNodes.forEach((textNode) => {
-            const originalText = textNode.nodeValue || '';
-            if (!originalText.trim()) return;
-            let hasMatches = false;
-            let html = originalText
-              .replace(/&/g, '&amp;')
-              .replace(/</g, '&lt;')
-              .replace(/>/g, '&gt;');
-            sorted.forEach((ann) => {
-              if (originalText.toLowerCase().includes(ann.text.toLowerCase())) {
-                const escaped = escapeHtmlText(ann.text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const regex = new RegExp(`(${escaped})`, 'gi');
-                html = html.replace(
-                  regex,
-                  `<mark class="libriaudio-hl libriaudio-hl-${ann.color}" data-annotation-id="${ann.id}">$1</mark>`
-                );
-                hasMatches = true;
+        // Collect marks for all annotations in this chapter
+        const marks: { s: number; e: number; color: string; id: string }[] = [];
+        currentChapterAnn.forEach((ann) => {
+          let s = typeof ann.startChar === 'number' ? Math.min(ann.startChar, ann.endChar ?? ann.startChar) : -1;
+          let e = typeof ann.endChar === 'number' ? Math.max(ann.startChar ?? ann.endChar, ann.endChar) : -1;
+
+          // If offsets are missing, invalid, or out of bounds, find by text match fallback
+          if (s < 0 || e <= s || e > flat.length) {
+            if (ann.text && ann.text.trim().length > 0) {
+              const snippet = ann.text.trim();
+              const found = flat.indexOf(snippet);
+              if (found !== -1) {
+                s = found;
+                e = found + snippet.length;
               }
-            });
-            if (hasMatches && textNode.parentNode) {
-              const span = doc.createElement('span');
-              span.innerHTML = html;
-              textNode.parentNode.replaceChild(span, textNode);
             }
-          });
-        }
-
-        // ---- Offset-based highlighting (exact selected range) ----
-        if (offsetAnn.length > 0) {
-          // Build the flattened text + node mapping over the current DOM,
-          // skipping text inside marks (matches the reader's own index, so the
-          // stored offsets line up exactly).
-          const w2 = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, null);
-          const parts: { node: Text; start: number; end: number }[] = [];
-          let flat = '';
-          let n2: Node | null;
-          while ((n2 = w2.nextNode())) {
-            const t = n2 as Text;
-            const v = t.nodeValue || '';
-            if (!v) continue;
-            const parent = t.parentElement;
-            if (
-              parent &&
-              ['mark', 'script', 'style', 'button', 'noscript'].includes(
-                parent.tagName.toLowerCase()
-              )
-            ) {
-              continue;
-            }
-            parts.push({ node: t, start: flat.length, end: flat.length + v.length - 1 });
-            flat += v;
           }
 
-          const marks: { s: number; e: number; color: string; id: string }[] = [];
-          offsetAnn.forEach((ann) => {
-            const s = Math.min(ann.startChar!, ann.endChar!);
-            const e = Math.max(ann.startChar!, ann.endChar!);
-            if (s <= e && s >= 0 && e < flat.length) {
-              marks.push({ s, e, color: ann.color, id: ann.id });
-            }
-          });
+          if (s >= 0 && e > s && e <= flat.length) {
+            marks.push({ s, e, color: ann.color, id: ann.id });
+          }
+        });
 
+        // Apply highlights into DOM
+        if (marks.length > 0) {
           parts.forEach(({ node, start, end }) => {
             const v = node.nodeValue || '';
             const nodeMarks = marks
-              .filter((m) => m.s <= end && m.e >= start)
+              .filter((m) => m.s < end && m.e > start)
               .sort((a, b) => a.s - b.s);
             if (nodeMarks.length === 0) return;
             let html = '';
             let pos = 0;
             for (const m of nodeMarks) {
               const ls = Math.max(0, m.s - start);
-              const le = Math.min(v.length - 1, m.e - start);
-              if (ls < pos || ls > le) continue;
+              const le = Math.min(v.length, m.e - start);
+              if (ls < pos || ls >= le) continue;
               html += escapeHtmlText(v.slice(pos, ls));
-              html += `<mark class="libriaudio-hl libriaudio-hl-${m.color}" data-annotation-id="${m.id}">${escapeHtmlText(v.slice(ls, le + 1))}</mark>`;
-              pos = le + 1;
+              html += `<mark class="libriaudio-hl libriaudio-hl-${m.color}" data-annotation-id="${m.id}">${escapeHtmlText(v.slice(ls, le))}</mark>`;
+              pos = le;
             }
             html += escapeHtmlText(v.slice(pos));
             if (node.parentNode) {
@@ -1824,12 +1433,6 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     }
   }, [htmlContent, annotations, currentChapterIndex, searchQuery]);
 
-  // Rebuild the character-offset index whenever the rendered chapter text
-  // changes (runs after the article element has mounted with the new content).
-  useEffect(() => {
-    if (!isOpen) return;
-    rebuildCharIndex();
-  }, [isOpen, processedHtmlContent, currentChapterIndex]);
 
   // Compute Cross-Chapter Search Results with Context Snippets
   const crossChapterSearchResults = useMemo(() => {
@@ -1897,6 +1500,50 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     return crossChapterSearchResults.reduce((sum, res) => sum + res.matches.length, 0);
   }, [crossChapterSearchResults]);
 
+  // Swipe gesture handlers for chapter navigation
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (isHoldSelectingRef.current || handleDragRef.current) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('.reader-select-handle') || target.closest('#reader-floating-selection-menu')) return;
+
+    if (e.touches.length === 1) {
+      swipeStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (isHoldSelectingRef.current || handleDragRef.current) {
+      swipeStartRef.current = null;
+      return;
+    }
+    if (!swipeStartRef.current || e.changedTouches.length !== 1) return;
+    const dx = e.changedTouches[0].clientX - swipeStartRef.current.x;
+    const dy = e.changedTouches[0].clientY - swipeStartRef.current.y;
+    swipeStartRef.current = null;
+    if (Math.abs(dx) < 75 || Math.abs(dy) > Math.abs(dx) * 0.7) return;
+    const natural = settings.swipeDirection === 'natural';
+    const chapters = currentBook.ebookChapters;
+    if (!chapters) return;
+
+    if (dx > 0) {
+      // Swipe right
+      const next = natural ? currentChapterIndex - 1 : currentChapterIndex + 1;
+      if (next >= 0 && next < chapters.length) {
+        setCurrentChapterIndex(next);
+        targetScrollPercentageRef.current = natural ? 100 : 0;
+        contentContainerRef.current?.scrollTo({ top: natural ? 999999 : 0 });
+      }
+    } else {
+      // Swipe left
+      const next = natural ? currentChapterIndex + 1 : currentChapterIndex - 1;
+      if (next >= 0 && next < chapters.length) {
+        setCurrentChapterIndex(next);
+        targetScrollPercentageRef.current = natural ? 0 : 100;
+        contentContainerRef.current?.scrollTo({ top: natural ? 0 : 999999 });
+      }
+    }
+  };
+
   // Click on Highlight in Text to open mini action card
   const handleContentClick = (e: React.MouseEvent) => {
     if (showSettingsDropdown) {
@@ -1905,18 +1552,6 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
     }
     if (showThreeDotMenu) {
       setShowThreeDotMenu(false);
-      return;
-    }
-    if (selectionMenu) {
-      // A `click` often fires immediately after the touchend that finished a
-      // text selection (especially on Android WebView). The selection now stays
-      // locked (Moon-Reader style) and is deliberately dismissed only by the
-      // outside-tap pointer handler, scrolling, or an explicit action — never by
-      // a stray click here, which used to make the highlight vanish.
-      if (selectionLockRef.current) {
-        return;
-      }
-      clearSelectionState();
       return;
     }
     const target = (e.target as HTMLElement).closest('.libriaudio-hl');
@@ -1949,7 +1584,7 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
       } else if (e.key === 'Escape') {
         if (activeSidebarTab) setActiveSidebarTab(null);
         else if (showSettingsDropdown) setShowSettingsDropdown(false);
-        else if (selectionMenu) setSelectionMenu(null);
+        else if (selectionMenu) clearSelectionState();
         else onClose();
       }
     };
@@ -2072,13 +1707,16 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
   };
 
   const readerPalette = READER_PALETTES[settings.theme] || READER_PALETTES.obsidian;
+  const customAccent = settings.accentColor && /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(settings.accentColor)
+    ? settings.accentColor
+    : '';
   const readerVars = {
     '--bg': readerPalette.bg,
     '--surface': readerPalette.surface,
     '--surface-raised': readerPalette.surfaceRaised,
-    '--accent': readerPalette.accent,
-    '--accent-hover': readerPalette.accentHover,
-    '--on-accent': readerPalette.onAccent,
+    '--accent': customAccent || readerPalette.accent,
+    '--accent-hover': customAccent ? lightenHex(customAccent, 0.18) : readerPalette.accentHover,
+    '--on-accent': customAccent ? onAccentFor(customAccent) : readerPalette.onAccent,
     '--text-main': readerPalette.textMain,
     '--text-dim': readerPalette.textDim,
     '--border-subtle': readerPalette.border,
@@ -2247,7 +1885,12 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
           id="reader-content-scroll"
           onScroll={handleScroll}
           onClick={handleContentClick}
-          onTouchStart={() => {}}
+          onPointerDown={handleReaderPointerDown}
+          onPointerMove={handleReaderPointerMove}
+          onPointerUp={handleReaderPointerUp}
+          onPointerCancel={handleReaderPointerCancel}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
           className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-black/20 pb-32 transition-all relative"
         >
           <div
@@ -2322,6 +1965,12 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
                     <span>{readingStats.words} words</span>
                     <span>•</span>
                     <span>~{readingStats.minutes} min read</span>
+                    {sessionReadingSeconds > 5 && scrollProgress > 0 && (
+                      <>
+                        <span>•</span>
+                        <span>{Math.round((readingStats.words * (scrollProgress / 100)) / (sessionReadingSeconds / 60))} wpm</span>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -2334,56 +1983,6 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
                   }}
                   dangerouslySetInnerHTML={{ __html: processedHtmlContent }}
                 />
-
-                {/* Custom (Moon+ style) selection overlay: our own highlight paint
-                    + draggable handles. Drawn in JS; never touches the article's
-                    HTML so committed highlights / search marks are unaffected. */}
-                {activeSelBoxes.length > 0 && (
-                  <div className="pointer-events-none absolute inset-0 z-10" aria-hidden="true">
-                    {activeSelBoxes.map((b, i) => (
-                      <span
-                        key={i}
-                        className="libriaudio-active-sel"
-                        style={{ top: b.top, left: b.left, width: b.width, height: b.height }}
-                      />
-                    ))}
-                  </div>
-                )}
-
-                {handlePos && selectionLockRef.current && (
-                  <>
-                    <div
-                      ref={selStartHandleRef}
-                      className="libriaudio-sel-handle"
-                      style={{ left: handlePos.start.x - 11, top: handlePos.start.y - 11 }}
-                      onPointerDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        beginHandleDrag('start');
-                      }}
-                      onTouchStart={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        beginHandleDrag('start');
-                      }}
-                    />
-                    <div
-                      ref={selEndHandleRef}
-                      className="libriaudio-sel-handle"
-                      style={{ left: handlePos.end.x - 11, top: handlePos.end.y - 11 }}
-                      onPointerDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        beginHandleDrag('end');
-                      }}
-                      onTouchStart={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        beginHandleDrag('end');
-                      }}
-                    />
-                  </>
-                )}
 
                 {/* Chapter Navigation Footer at bottom of chapter text */}
                 {currentBook.ebookChapters && currentBook.ebookChapters.length > 1 && (
@@ -2576,6 +2175,8 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
                                     text: ann.text,
                                     note: ann.note || '',
                                     color: ann.color,
+                                    startChar: ann.startChar,
+                                    endChar: ann.endChar,
                                   })
                                 }
                                 className="opacity-70 hover:opacity-100 hover:text-[var(--accent)]"
@@ -2735,21 +2336,56 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
         )}
       </div>
 
+      {/* Selection Handles */}
+      {selectionMenu && selectionMenu.visible && selectionMenu.handleStart && selectionMenu.handleEnd && (
+        <>
+          <div
+            className={`reader-select-handle reader-select-handle-start ${activeDraggingHandle === 'start' ? 'dragging' : ''}`}
+            style={{ left: `${selectionMenu.handleStart.x}px`, top: `${selectionMenu.handleStart.y}px` }}
+            onPointerDown={(e) => {
+              (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+              onHandleDragStart('start', e.clientX, e.clientY, e);
+            }}
+            onTouchStart={(e) => {
+              if (e.touches[0]) onHandleDragStart('start', e.touches[0].clientX, e.touches[0].clientY, e);
+            }}
+          />
+          <div
+            className={`reader-select-handle reader-select-handle-end ${activeDraggingHandle === 'end' ? 'dragging' : ''}`}
+            style={{ left: `${selectionMenu.handleEnd.x}px`, top: `${selectionMenu.handleEnd.y}px` }}
+            onPointerDown={(e) => {
+              (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+              onHandleDragStart('end', e.clientX, e.clientY, e);
+            }}
+            onTouchStart={(e) => {
+              if (e.touches[0]) onHandleDragStart('end', e.touches[0].clientX, e.touches[0].clientY, e);
+            }}
+          />
+        </>
+      )}
+
       {/* Floating Selection Toolbar */}
       {selectionMenu && selectionMenu.visible && (
         <div
           id="reader-floating-selection-menu"
           className="fixed z-[80] flex items-center gap-1 bg-[var(--surface)] backdrop-blur-md border border-[var(--border-subtle)] px-2 py-1.5 rounded-full shadow-2xl animate-in zoom-in-95 duration-100 text-[var(--text-main)] font-sans text-xs"
           style={{ top: `${selectionMenu.y}px`, left: `${selectionMenu.x}px` }}
-          onPointerDown={(e) => e.stopPropagation()}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
         >
           {/* Highlight Color Pickers */}
           <div className="flex items-center gap-1 px-1 border-r border-[var(--border-subtle)]">
             {HIGHLIGHT_COLORS.map((c) => (
               <button
                 key={c.id}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
                 onClick={() => createHighlight(c.id)}
-                className={`w-5 h-5 rounded-full ${c.dot} hover:scale-110 transition-transform`}
+                className={`w-5 h-5 rounded-full ${c.dot} hover:scale-110 active:scale-95 transition-transform cursor-pointer`}
                 title={`Highlight in ${c.name}`}
               />
             ))}
@@ -2757,8 +2393,12 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
 
           {/* Add Note Button */}
           <button
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
             onClick={openNoteFromSelection}
-            className="p-1.5 rounded-lg hover:bg-[var(--surface-raised)] flex items-center gap-1 text-[var(--accent)] font-medium"
+            className="p-1.5 rounded-lg hover:bg-[var(--surface-raised)] flex items-center gap-1 text-[var(--accent)] font-medium cursor-pointer"
             title="Attach Note"
           >
             <StickyNote className="w-3.5 h-3.5" />
@@ -2767,8 +2407,12 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
 
           {/* Bookmark Selected Text */}
           <button
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
             onClick={bookmarkFromSelection}
-            className="p-1.5 rounded-lg hover:bg-[var(--surface-raised)] flex items-center gap-1 text-[var(--accent)] font-medium"
+            className="p-1.5 rounded-lg hover:bg-[var(--surface-raised)] flex items-center gap-1 text-[var(--accent)] font-medium cursor-pointer"
             title="Bookmark selected text"
           >
             <BookmarkIcon className="w-3.5 h-3.5" />
@@ -2777,8 +2421,12 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
 
           {/* Dictionary — opens WordWeb / system dictionary app */}
           <button
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
             onClick={() => handleDictionaryLookup(selectionMenu.text)}
-            className="p-1.5 rounded-lg hover:bg-[var(--surface-raised)] flex items-center gap-1 font-medium"
+            className="p-1.5 rounded-lg hover:bg-[var(--surface-raised)] flex items-center gap-1 font-medium cursor-pointer"
             title="Look up in Dictionary App"
           >
             <ExternalLink className="w-3.5 h-3.5" />
@@ -2787,14 +2435,19 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
 
           {/* Copy Text */}
           <button
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
             onClick={() => handleCopySelection(selectionMenu.text)}
-            className="p-1.5 rounded-lg hover:bg-[var(--surface-raised)] flex items-center gap-1"
+            className="p-1.5 rounded-lg hover:bg-[var(--surface-raised)] flex items-center gap-1 cursor-pointer"
             title="Copy Text"
           >
             {copiedState ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
           </button>
         </div>
       )}
+
 
       {/* Popover Mini Card when clicking an existing highlight in text */}
       {activeHighlightPopup && (
@@ -2846,6 +2499,8 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
                   text: ann.text,
                   note: ann.note || '',
                   color: ann.color,
+                  startChar: ann.startChar,
+                  endChar: ann.endChar,
                 });
               }}
               className="text-[var(--accent)] font-medium hover:underline"
@@ -3129,6 +2784,50 @@ export const GutenbergReaderModal: React.FC<GutenbergReaderModalProps> = ({
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Accent Color Picker */}
+            <div>
+              <span className="text-[11px] font-medium opacity-70 mb-2 block uppercase tracking-wider">Accent Color</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={settings.accentColor || readerPalette.accent}
+                  onChange={(e) => updateSettings({ accentColor: e.target.value })}
+                  className="w-9 h-9 rounded-lg border border-[var(--border-subtle)] bg-transparent cursor-pointer p-0.5"
+                  title="Choose accent color"
+                />
+                <div className="flex-1 grid grid-cols-5 gap-1.5">
+                  {[
+                    '#C5A059', '#D97706', '#16A34A', '#0EA5E9', '#7C3AED',
+                  ].map((sw) => {
+                    const isActive = settings.accentColor
+                      ? settings.accentColor.toLowerCase() === sw.toLowerCase()
+                      : readerPalette.accent.toLowerCase() === sw.toLowerCase();
+                    return (
+                      <button
+                        key={sw}
+                        onClick={() => updateSettings({ accentColor: sw })}
+                        className={`w-full aspect-square rounded-lg border transition-all ${
+                          isActive ? 'ring-2 ring-[var(--accent)] border-[var(--accent)]' : 'border-[var(--border-subtle)] hover:scale-105'
+                        }`}
+                        style={{ backgroundColor: sw }}
+                        title={sw}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+              <button
+                onClick={() => updateSettings({ accentColor: '' })}
+                className={`mt-2 w-full py-1.5 rounded-xl border text-[11px] text-center transition-all ${
+                  settings.accentColor
+                    ? 'bg-[var(--surface-raised)] border-[var(--border-subtle)] opacity-70 hover:opacity-100'
+                    : 'bg-[var(--accent)] text-[var(--on-accent)] font-semibold border-[var(--accent)]'
+                }`}
+              >
+                Use theme default
+              </button>
             </div>
           </div>
         </div>
