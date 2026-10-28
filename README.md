@@ -4,7 +4,7 @@ Libre is an Android app for finding and enjoying public-domain audiobooks and eb
 
 ## Download
 
-[Download the latest Android APK](https://github.com/thealbinocockroach/Libre/raw/refs/heads/main/LibreAudio.apk)
+[Download the latest Android APK](https://github.com/thealbinocockroach/Libre/releases/latest/download/LibreAudio.apk)
 
 On your Android device, open the downloaded APK and follow the installation prompt. Android may ask you to allow installs from your browser or file manager.
 
@@ -34,3 +34,4 @@ The debug APK is created at `android/app/build/outputs/apk/debug/LibreAudio-debu
 ## Project details
 
 Libre is built with React, TypeScript, Vite, and Capacitor for Android. Audiobook and ebook availability depends on the catalogs and network connection; the app also supports offline use for downloaded audio and saved books.
+
