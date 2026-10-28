@@ -1,0 +1,36 @@
+name: libriaudio
+description: "A modern Flutter mobile audiobook player powered by LibriVox and the Internet Archive."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State Management
+  flutter_riverpod: ^2.5.1
+
+  # Networking & HTTP
+  dio: ^5.4.3+1
+
+  # Audio Engine & Background Services
+  just_audio: ^0.9.38
+  audio_service: ^0.18.12
+  audio_session: ^0.1.19
+
+  # Image Caching & UI Utilities
+  cached_network_image: ^3.3.1
+  google_fonts: ^6.2.1
+  intl: ^0.19.0
+  rxdart: ^0.27.7
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.2
+
+flutter:
+  uses-material-design: true

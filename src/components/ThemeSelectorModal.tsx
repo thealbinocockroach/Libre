@@ -1,0 +1,200 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Palette,
+  Check,
+  X,
+  Sun,
+  Moon,
+  Clock,
+  Sparkles,
+  Laptop,
+} from 'lucide-react';
+import {
+  THEMES,
+  ThemeId,
+  getSavedTheme,
+  saveThemePreference,
+  getSmartAdaptiveResolvedTheme,
+  resolveThemeDef,
+} from '../utils/themeManager';
+
+interface ThemeSelectorModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export const ThemeSelectorModal: React.FC<ThemeSelectorModalProps> = ({
+  isOpen,
+  onClose,
+}) => {
+  const [themeFilter, setThemeFilter] = useState<'all' | 'dark' | 'light'>('all');
+  const [activeTheme, setActiveTheme] = useState<ThemeId>(getSavedTheme());
+  const [resolvedAdaptive, setResolvedAdaptive] = useState<ThemeId>(
+    getSmartAdaptiveResolvedTheme()
+  );
+
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTheme(getSavedTheme());
+      setResolvedAdaptive(getSmartAdaptiveResolvedTheme());
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const handleSelectTheme = (themeId: ThemeId) => {
+    setActiveTheme(themeId);
+    saveThemePreference(themeId);
+    setResolvedAdaptive(getSmartAdaptiveResolvedTheme());
+  };
+
+  const themeList = [THEMES['neo-brutalist'], THEMES['neo-brutalist-dark']];
+  const selectedTheme = resolveThemeDef(activeTheme);
+  const visibleThemes = themeList.filter((theme) => themeFilter === 'all' || theme.category === themeFilter);
+
+  return (
+    <div
+      id="theme-selector-modal-overlay"
+      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      <div
+        id="theme-selector-modal-card"
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-xl bg-[var(--surface)] rounded-t-3xl sm:rounded-3xl border border-[var(--border-subtle)] shadow-2xl overflow-hidden flex flex-col my-auto max-h-[90vh]"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-subtle)] bg-[var(--surface-raised)] shrink-0">
+          <div className="flex items-center gap-2">
+            <Palette className="w-4 h-4 text-[var(--accent)]" />
+            <h3 className="text-sm font-semibold text-[var(--text-main)]">Neo Brutalist Themes</h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-xl bg-[var(--surface-raised)] hover:bg-[var(--surface-raised)] text-[var(--text-dim)] hover:text-[var(--text-main)] transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Modal Body */}
+        <div className="p-5 overflow-y-auto space-y-5 flex-1 scrollbar-thin scrollbar-thumb-white/10">
+          <div className="rounded-2xl border border-[var(--border-subtle)] overflow-hidden" style={{ backgroundColor: selectedTheme.colors.bg, color: selectedTheme.colors.textMain }}>
+            <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: selectedTheme.colors.border, backgroundColor: selectedTheme.colors.surface }}>
+              <div><p className="text-[9px] uppercase tracking-[0.2em] opacity-65">Live preview</p><h4 className="mt-0.5 text-sm font-bold">{selectedTheme.name}</h4></div>
+              <div className="flex gap-1.5">{selectedTheme.previewColors.map((color, idx) => <span key={idx} className="h-5 w-5 rounded-full border" style={{ backgroundColor: color, borderColor: selectedTheme.colors.border }} />)}</div>
+            </div>
+            <div className="p-4">
+              <div className="flex items-center gap-3 rounded-xl border p-3" style={{ borderColor: selectedTheme.colors.border, backgroundColor: selectedTheme.colors.surface }}>
+                <div className="grid h-10 w-8 shrink-0 place-items-center rounded-md text-[10px] font-black" style={{ backgroundColor: selectedTheme.colors.accent, color: selectedTheme.colors.onAccent }}>Aa</div>
+                <div className="min-w-0 flex-1"><p className="truncate text-xs font-bold">A book for every hour</p><p className="mt-0.5 text-[10px] opacity-70">Your library, in a new light</p></div>
+                <span className="rounded-lg px-2.5 py-1.5 text-[9px] font-bold" style={{ backgroundColor: selectedTheme.colors.accent, color: selectedTheme.colors.onAccent }}>READ</span>
+              </div>
+              <p className="mt-2 text-[10px] opacity-70">{selectedTheme.subtitle}</p>
+            </div>
+          </div>
+
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none" aria-label="Filter themes">
+            {([
+              ['all', 'All'], ['light', 'Light'], ['dark', 'Dark'],
+            ] as const).map(([id, label]) => (
+              <button key={id} onClick={() => setThemeFilter(id)} className={`shrink-0 rounded-full border px-3 py-1.5 text-[10px] font-semibold transition-colors ${themeFilter === id ? 'border-[var(--accent)] bg-[var(--accent)] text-[var(--on-accent)]' : 'border-[var(--border-subtle)] bg-[var(--surface-raised)] text-[var(--text-dim)] hover:text-[var(--text-main)]'}`}>
+                {label}{id === 'all' ? ` · ${themeList.length}` : ` · ${themeList.filter((theme) => theme.category === id).length}`}
+              </button>
+            ))}
+          </div>
+
+          {/* Theme Grid */}
+          <button onClick={() => handleSelectTheme('system')} className={`mb-3 w-full rounded-xl border px-4 py-3 text-left text-xs font-semibold ${activeTheme === 'system' ? 'border-[var(--accent)] bg-[var(--accent-dim)] text-[var(--text-main)]' : 'border-[var(--border-subtle)] bg-[var(--surface-raised)] text-[var(--text-dim)]'}`}>
+            Follow device theme <span className="mt-1 block text-[10px] font-normal opacity-80">Switches between light and dark automatically.</span>
+          </button>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {visibleThemes.map((theme) => {
+              const isSelected = activeTheme === theme.id;
+              const isAdaptive = theme.id === 'smart-adaptive';
+
+              return (
+                <div
+                  key={theme.id}
+                  id={`theme-option-${theme.id}`}
+                  onClick={() => handleSelectTheme(theme.id)}
+                  className={`min-h-32 p-4 rounded-2xl border-2 cursor-pointer transition-all duration-200 relative overflow-hidden flex flex-col justify-between ${
+                    isSelected
+                      ? 'border-[var(--accent)] bg-[var(--accent)] shadow-[0_0_20px_rgba(var(--accent-rgb),0.15)]'
+                      : 'border-[var(--border-subtle)] bg-[var(--surface-raised)] hover:border-[var(--border-subtle)] hover:bg-[var(--surface-raised)]'
+                  }`}
+                >
+                  {/* Top Bar with Palette Swatches & Check */}
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <div className="flex items-center gap-1.5 p-1 rounded-lg bg-[var(--bg)]/80 border border-[var(--border-subtle)]">
+                      <div
+                        className="w-4 h-4 rounded-full border border-[var(--border-subtle)]"
+                        style={{ backgroundColor: theme.previewColors[0] }}
+                      />
+                      <div
+                        className="w-4 h-4 rounded-full border border-[var(--border-subtle)]"
+                        style={{ backgroundColor: theme.previewColors[1] }}
+                      />
+                      <div
+                        className="w-4 h-4 rounded-full border border-[var(--border-subtle)]"
+                        style={{ backgroundColor: theme.previewColors[2] }}
+                      />
+                    </div>
+
+                    {isSelected && (
+                      <div className="w-5 h-5 rounded-full bg-[var(--accent)] text-[var(--on-accent)] flex items-center justify-center shadow-md">
+                        <Check className="w-3 h-3 stroke-[3]" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Title & Description */}
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className={`text-sm font-bold tracking-tight ${isSelected ? 'text-[var(--on-accent)]' : 'text-[var(--text-main)]'}`}>
+                        {theme.name}
+                      </h4>
+                      {isAdaptive && (
+                        <span className="text-[9px] font-bold uppercase bg-[var(--accent-dim)] text-[var(--accent)] px-1.5 py-0.2 rounded-full border border-[var(--accent)]">
+                          Auto
+                        </span>
+                      )}
+                    </div>
+                    <p className={`text-[11px] mt-1 leading-snug ${isSelected ? 'text-[var(--on-accent)]/80' : 'text-[var(--text-dim)]'}`}>
+                      {theme.subtitle}
+                    </p>
+                  </div>
+
+                  {/* Smart Adaptive Active State Sub-info */}
+                  {isAdaptive && isSelected && (
+                    <div className="mt-3 pt-2 border-t border-[var(--border-subtle)] flex items-center justify-between text-[10px] text-[var(--accent)] font-mono">
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3" /> Currently Active:
+                      </span>
+                      <span className="font-bold uppercase">
+                        {THEMES[resolvedAdaptive]?.name || 'Adaptive'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 border-t border-[var(--border-subtle)] bg-[var(--surface-raised)] shrink-0 flex items-center justify-between">
+          <span className="text-[11px] text-[var(--text-dim)]">
+            Selected: <strong className="text-[var(--text-main)]">{activeTheme === 'system' ? 'Follow device theme' : selectedTheme.name}</strong>
+          </span>
+          <button
+            onClick={onClose}
+            className="px-5 py-2 rounded-xl bg-[var(--accent)] text-[var(--on-accent)] text-xs font-bold hover:bg-[var(--accent-hover)] transition-colors"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};

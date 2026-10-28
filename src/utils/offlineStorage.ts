@@ -1,0 +1,1048 @@
+import { Audiobook, AudioTrack, OfflineBookData, OfflineEbookData, EbookChapter } from '../types';
+import { resolveFullTracklist } from './librivoxRecommendations';
+import { httpGetBlob } from './httpClient';
+
+const DB_NAME = 'LibriAudio_Offline_DB';
+const DB_VERSION = 3; // v3 adds offline_covers store
+const STORE_BOOKS = 'offline_books';
+const STORE_TRACKS = 'offline_tracks';
+const STORE_EBOOKS = 'offline_ebooks';
+const STORE_COVERS = 'offline_covers';
+
+function isNativeAndroid(): boolean {
+  return (
+    typeof (window as any).Capacitor?.isNativePlatform === 'function' &&
+    !!(window as any).Capacitor?.isNativePlatform?.()
+  );
+}
+
+function openDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      reject(new Error('IndexedDB is not supported in this browser environment.'));
+      return;
+    }
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains(STORE_BOOKS)) {
+        db.createObjectStore(STORE_BOOKS, { keyPath: 'bookId' });
+      }
+      if (!db.objectStoreNames.contains(STORE_TRACKS)) {
+        db.createObjectStore(STORE_TRACKS, { keyPath: 'trackKey' });
+      }
+      if (!db.objectStoreNames.contains(STORE_EBOOKS)) {
+        db.createObjectStore(STORE_EBOOKS, { keyPath: 'bookId' });
+      }
+      if (!db.objectStoreNames.contains(STORE_COVERS)) {
+        db.createObjectStore(STORE_COVERS, { keyPath: 'bookId' });
+      }
+    };
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+/**
+ * Format bytes to readable string (e.g. 24.5 MB, 1.2 KB)
+ */
+export function formatBytes(bytes: number, decimals = 1): string {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+/* =========================================================================
+   OFFLINE EBOOKS STORAGE ENGINE
+   ========================================================================= */
+
+/**
+ * Save an ebook (chapters and metadata) to device IndexedDB
+ */
+export async function saveOfflineEbook(
+  book: Audiobook,
+  chapters: EbookChapter[],
+  fullText?: string,
+  readingPosition?: { chapterIndex: number; scrollPercentage: number }
+): Promise<void> {
+  try {
+    const db = await openDB();
+    const sizeBytes = new Blob([JSON.stringify(chapters) + (fullText || '')]).size;
+    const now = Date.now();
+
+    // Check existing to preserve progress if not explicitly passed
+    const existing = await getOfflineEbook(book.id);
+
+    const record: OfflineEbookData = {
+      bookId: book.id,
+      bookTitle: book.title,
+      bookAuthor: book.author,
+      coverImageUrl: book.coverImageUrl,
+      chapters,
+      fullText,
+      storedAt: existing?.storedAt || now,
+      lastReadChapterIndex: readingPosition?.chapterIndex ?? existing?.lastReadChapterIndex ?? 0,
+      lastScrollPercentage: readingPosition?.scrollPercentage ?? existing?.lastScrollPercentage ?? 0,
+      lastReadAt: now,
+      sizeBytes,
+    };
+
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_EBOOKS, 'readwrite');
+      tx.objectStore(STORE_EBOOKS).put(record);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('libriaudio_ebooks_updated', { detail: { bookId: book.id } }));
+    }
+
+    // Cache the cover so the ebook renders offline with no internet.
+    try {
+      await saveOfflineCover(book);
+    } catch {
+      // ignore
+    }
+  } catch (err) {
+    console.warn('Failed to save offline ebook to IndexedDB:', err);
+  }
+}
+
+/**
+ * Retrieve an offline stored ebook by bookId
+ */
+export async function getOfflineEbook(bookId: string): Promise<OfflineEbookData | null> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_EBOOKS, 'readonly');
+      const store = tx.objectStore(STORE_EBOOKS);
+      const req = store.get(bookId);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get all offline stored ebooks
+ */
+export async function getAllOfflineEbooks(): Promise<OfflineEbookData[]> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_EBOOKS, 'readonly');
+      const store = tx.objectStore(STORE_EBOOKS);
+      const req = store.getAll();
+      req.onsuccess = () => {
+        const list: OfflineEbookData[] = req.result || [];
+        list.sort((a, b) => (b.lastReadAt || 0) - (a.lastReadAt || 0));
+        resolve(list);
+      };
+      req.onerror = () => resolve([]);
+    });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Check if a book's ebook is stored on device
+ */
+export async function isEbookStoredOffline(bookId: string): Promise<boolean> {
+  const ebook = await getOfflineEbook(bookId);
+  return !!ebook && ebook.chapters && ebook.chapters.length > 0;
+}
+
+/**
+ * Update reading progress position on stored offline ebook
+ */
+export async function updateEbookReadingPosition(
+  bookId: string,
+  chapterIndex: number,
+  scrollPercentage: number
+): Promise<void> {
+  try {
+    const existing = await getOfflineEbook(bookId);
+    if (!existing) return;
+
+    const db = await openDB();
+    const updated: OfflineEbookData = {
+      ...existing,
+      lastReadChapterIndex: chapterIndex,
+      lastScrollPercentage: scrollPercentage,
+      lastReadAt: Date.now(),
+    };
+
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_EBOOKS, 'readwrite');
+      tx.objectStore(STORE_EBOOKS).put(updated);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.warn('Failed to update ebook reading position:', err);
+  }
+}
+
+/**
+ * Delete a stored offline ebook from device
+ */
+export async function deleteOfflineEbook(bookId: string): Promise<void> {
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_EBOOKS, 'readwrite');
+      tx.objectStore(STORE_EBOOKS).delete(bookId);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('libriaudio_ebooks_updated', { detail: { bookId } }));
+    }
+
+    try {
+      await deleteOfflineCover(bookId);
+    } catch {
+      // ignore
+    }
+  } catch (e) {
+    console.warn('Failed to delete offline ebook:', e);
+  }
+}
+
+/* =========================================================================
+   OFFLINE COVER IMAGE CACHE
+   Covers are fetched once at download time and served from IndexedDB,
+   so downloaded books render instantly with no internet.
+   ========================================================================= */
+
+export interface OfflineCoverRecord {
+  bookId: string;
+  blob: Blob;
+  contentType: string;
+  sourceUrl: string;
+  updatedAt: number;
+}
+
+/**
+ * Fetch a book's remote cover and persist it. Best-effort: never throws.
+ * Skips data:/blob: URLs (already local).
+ */
+export async function saveOfflineCover(book: Audiobook): Promise<boolean> {
+  try {
+    const url = book.coverImageUrl;
+    if (!url || url.startsWith('data:') || url.startsWith('blob:')) return false;
+    const result = await httpGetBlob(url, { timeout: 20000, retries: 1 });
+    if (!result.ok || !result.data || result.data.size < 512) return false;
+    const db = await openDB();
+    const record: OfflineCoverRecord = {
+      bookId: book.id,
+      blob: result.data,
+      contentType: result.data.type || 'image/jpeg',
+      sourceUrl: url,
+      updatedAt: Date.now(),
+    };
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_COVERS, 'readwrite');
+      tx.objectStore(STORE_COVERS).put(record);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve a cached cover to an object URL, or null when not cached.
+ * Callers should fall back to the remote URL, then a placeholder.
+ */
+export async function getOfflineCoverUrl(bookId: string): Promise<string | null> {
+  try {
+    const db = await openDB();
+    const blob: Blob | null = await new Promise((resolve) => {
+      const tx = db.transaction(STORE_COVERS, 'readonly');
+      const req = tx.objectStore(STORE_COVERS).get(bookId);
+      req.onsuccess = () => resolve(req.result?.blob || null);
+      req.onerror = () => resolve(null);
+    });
+    if (blob && blob.size > 0) return URL.createObjectURL(blob);
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteOfflineCover(bookId: string): Promise<void> {
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(STORE_COVERS, 'readwrite');
+      tx.objectStore(STORE_COVERS).delete(bookId);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Backfill covers for books already on device. Returns counts.
+ * Run from the Download Manager "Sync" action.
+ */
+export async function syncOfflineCovers(): Promise<{ synced: number; skipped: number }> {
+  let synced = 0;
+  let skipped = 0;
+  try {
+    const books = await getDownloadedBooks();
+    const ebooks = await getAllOfflineEbooks();
+    const seen = new Set<string>();
+    const targets: Audiobook[] = [];
+    for (const b of books) {
+      if (b.book && !seen.has(b.book.id)) {
+        seen.add(b.book.id);
+        targets.push(b.book);
+      }
+    }
+    for (const e of ebooks) {
+      if (!seen.has(e.bookId)) {
+        seen.add(e.bookId);
+        targets.push({
+          id: e.bookId,
+          title: e.bookTitle,
+          author: e.bookAuthor,
+          description: '',
+          coverImageUrl: e.coverImageUrl || '',
+          language: 'English',
+          totalTimeSecs: 0,
+          tracks: [],
+        } as Audiobook);
+      }
+    }
+    for (const book of targets) {
+      if (!book.coverImageUrl) {
+        skipped++;
+        continue;
+      }
+      // Skip if already cached
+      const existing = await getOfflineCoverUrl(book.id);
+      if (existing) {
+        URL.revokeObjectURL(existing);
+        skipped++;
+        continue;
+      }
+      const ok = await saveOfflineCover(book);
+      if (ok) synced++;
+      else skipped++;
+    }
+  } catch {
+    // ignore
+  }
+  return { synced, skipped };
+}
+
+/* =========================================================================
+   AUDIOBOOK DOWNLOAD & OFFLINE PLAYBACK ENGINE
+   ========================================================================= */
+
+/**
+ * Get all downloaded books metadata
+ */
+export async function getDownloadedBooks(): Promise<OfflineBookData[]> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_BOOKS, 'readonly');
+      const store = tx.objectStore(STORE_BOOKS);
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  } catch (e) {
+    console.warn('Failed to get downloaded books from IndexedDB', e);
+    return [];
+  }
+}
+
+/**
+ * Get list of downloaded track IDs for a specific book
+ */
+export async function getDownloadedTrackIdsForBook(bookId: string): Promise<string[]> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_TRACKS, 'readonly');
+      const store = tx.objectStore(STORE_TRACKS);
+      const req = store.openCursor();
+      const trackIds: string[] = [];
+
+      req.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
+        if (cursor) {
+          if (cursor.value.bookId === bookId && cursor.value.trackId) {
+            trackIds.push(cursor.value.trackId);
+          }
+          cursor.continue();
+        } else {
+          resolve(trackIds);
+        }
+      };
+      req.onerror = () => resolve([]);
+    });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Check if a specific track is downloaded offline
+ */
+export async function isTrackDownloaded(bookId: string, trackId: string): Promise<boolean> {
+  try {
+    const db = await openDB();
+    const trackKey = `${bookId}_${trackId}`;
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_TRACKS, 'readonly');
+      const store = tx.objectStore(STORE_TRACKS);
+      const req = store.get(trackKey);
+      req.onsuccess = () => resolve(!!req.result && !!req.result.blob);
+      req.onerror = () => resolve(false);
+    });
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check download summary for a book
+ */
+export async function getBookDownloadSummary(book: Audiobook): Promise<{
+  isFullyDownloaded: boolean;
+  isPartiallyDownloaded: boolean;
+  downloadedCount: number;
+  totalTracks: number;
+  downloadedTrackIds: string[];
+  sizeBytes: number;
+}> {
+  try {
+    const downloadedTrackIds = await getDownloadedTrackIdsForBook(book.id);
+    const totalTracks = Math.max(1, book.tracks?.length || 1);
+    const downloadedCount = downloadedTrackIds.length;
+
+    // Retrieve recorded total size or compute from tracks
+    const db = await openDB();
+    const sizeBytes = await new Promise<number>((resolve) => {
+      const tx = db.transaction(STORE_BOOKS, 'readonly');
+      const req = tx.objectStore(STORE_BOOKS).get(book.id);
+      req.onsuccess = () => resolve(req.result?.sizeBytes || downloadedCount * 3.5 * 1024 * 1024);
+      req.onerror = () => resolve(downloadedCount * 3.5 * 1024 * 1024);
+    });
+
+    return {
+      isFullyDownloaded: downloadedCount >= totalTracks && totalTracks > 0,
+      isPartiallyDownloaded: downloadedCount > 0 && downloadedCount < totalTracks,
+      downloadedCount,
+      totalTracks,
+      downloadedTrackIds,
+      sizeBytes,
+    };
+  } catch {
+    return {
+      isFullyDownloaded: false,
+      isPartiallyDownloaded: false,
+      downloadedCount: 0,
+      totalTracks: book.tracks?.length || 1,
+      downloadedTrackIds: [],
+      sizeBytes: 0,
+    };
+  }
+}
+
+/**
+ * Check if a specific book is downloaded
+ */
+export async function isBookDownloaded(bookId: string): Promise<boolean> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_BOOKS, 'readonly');
+      const store = tx.objectStore(STORE_BOOKS);
+      const req = store.get(bookId);
+      req.onsuccess = () =>
+        resolve(!!req.result && (req.result.status === 'ready' || req.result.status === 'partial'));
+      req.onerror = () => resolve(false);
+    });
+  } catch {
+    return false;
+  }
+}
+
+export const getAllOfflineBooks = getDownloadedBooks;
+export const isBookOfflineReady = isBookDownloaded;
+
+/**
+ * Resolve the best playback URL: native file, IndexedDB blob, or remote stream.
+ */
+export async function getPlayableAudioUrl(
+  bookId: string,
+  trackId: string,
+  remoteUrl: string,
+  trackNumber?: number,
+): Promise<string> {
+  if (isNativeAndroid()) {
+    try {
+      const { audioDownloadService } = await import('./audioDownloadService');
+      const uri = await audioDownloadService.getPlayableUri(bookId, trackId, remoteUrl);
+      if (uri.startsWith('file://')) return uri;
+    } catch {
+      // fall through
+    }
+  }
+
+  const blobUrl = await getOfflineAudioTrackUrl(bookId, trackId, trackNumber);
+  if (blobUrl) return blobUrl;
+
+  return remoteUrl.startsWith('http://')
+    ? remoteUrl.replace('http://', 'https://')
+    : remoteUrl;
+}
+
+/**
+ * Retrieve an offline blob URL for an audio track (with resilient fallback matching)
+ */
+export async function getOfflineAudioTrackUrl(
+  bookId: string,
+  trackId: string,
+  trackNumber?: number
+): Promise<string | null> {
+  try {
+    const db = await openDB();
+    const trackKey = `${bookId}_${trackId}`;
+
+    // 1. Direct primary key lookup
+    const directBlob: Blob | null = await new Promise((resolve) => {
+      const tx = db.transaction(STORE_TRACKS, 'readonly');
+      const store = tx.objectStore(STORE_TRACKS);
+      const req = store.get(trackKey);
+      req.onsuccess = () => resolve(req.result?.blob || null);
+      req.onerror = () => resolve(null);
+    });
+
+    if (directBlob && directBlob.size > 0) {
+      return URL.createObjectURL(directBlob);
+    }
+
+    // 2. Cursor fallback search by trackNumber or trackId match under bookId
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_TRACKS, 'readonly');
+      const store = tx.objectStore(STORE_TRACKS);
+      const req = store.openCursor();
+
+      req.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
+        if (cursor) {
+          const val = cursor.value;
+          if (
+            val.bookId === bookId &&
+            val.blob &&
+            (val.trackId === trackId ||
+              (trackNumber !== undefined && val.trackNumber === trackNumber) ||
+              val.trackKey.includes(trackId))
+          ) {
+            resolve(URL.createObjectURL(val.blob));
+            return;
+          }
+          cursor.continue();
+        } else {
+          resolve(null);
+        }
+      };
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch audio blob using the centralized HTTP client with timeout + retry
+ */
+async function fetchAudioBlob(audioUrl: string): Promise<Blob> {
+  const result = await httpGetBlob(audioUrl, { timeout: 30000, retries: 2 });
+  if (!result.ok || !result.data || result.data.size < 512) {
+    throw new Error(`Failed to download audio track from ${audioUrl}`);
+  }
+  return result.data;
+}
+
+/**
+ * Download specific tracks or full audiobook for offline listening
+ */
+export async function downloadAudiobook(
+  book: Audiobook,
+  optionsOrProgress?:
+    | {
+        trackIds?: string[];
+        onProgress?: (percent: number, loadedBytes: number, currentTrackTitle?: string) => void;
+      }
+    | ((percent: number, loadedBytes?: number) => void)
+): Promise<void> {
+  const trackIds: string[] | undefined =
+    optionsOrProgress && typeof optionsOrProgress === 'object' && 'trackIds' in optionsOrProgress
+      ? optionsOrProgress.trackIds
+      : undefined;
+
+  const onProgress =
+    typeof optionsOrProgress === 'function'
+      ? optionsOrProgress
+      : optionsOrProgress?.onProgress;
+
+  // On native Android, delegate to the foreground-service download engine so
+  // we get real streaming progress, a progress notification, and downloads that
+  // keep running after leaving the page. All finished tracks are still written
+  // into the same IndexedDB stores so offline playback works identically.
+  if (isNativeAndroid()) {
+    // Cache the cover up-front so art is available even if audio is partial.
+    try {
+      await saveOfflineCover(book);
+    } catch {
+      // ignore
+    }
+    const { downloadBookNative } = await import('./downloadNative');
+    await downloadBookNative(book, {
+      trackIds,
+      onProgress: (p) => {
+        if (onProgress) onProgress(p.percent, p.bytesLoaded, p.trackTitle);
+      },
+    });
+    return;
+  }
+
+  // Resolve full tracklist if book currently only contains 1 preview track
+  let activeBook = book;
+  if (!activeBook.tracks || activeBook.tracks.length <= 1) {
+    try {
+      activeBook = await resolveFullTracklist(book);
+    } catch (e) {
+      console.warn('Could not resolve full tracklist before download, proceeding with available tracks:', e);
+    }
+  }
+
+  const db = await openDB();
+  const allTracks =
+    activeBook.tracks && activeBook.tracks.length > 0
+      ? activeBook.tracks
+      : [
+          {
+            id: `${activeBook.id}_tr_1`,
+            title: activeBook.title,
+            audioUrl: 'https://archive.org/download/librivox_audio_collection/placeholder.mp3',
+            durationSeconds: activeBook.totalTimeSecs || 1800,
+            trackNumber: 1,
+          },
+        ];
+
+  // If specific trackIds were selected, filter down; otherwise download all tracks
+  const tracksToDownload =
+    trackIds && trackIds.length > 0
+      ? allTracks.filter((t) => trackIds.includes(t.id))
+      : allTracks;
+
+  let totalBytes = 0;
+
+  // Mark initial record in IndexedDB
+  const initialRecord: OfflineBookData = {
+    bookId: activeBook.id,
+    book: activeBook,
+    sizeBytes: 0,
+    downloadedAt: Date.now(),
+    status: 'downloading',
+    progress: 0,
+  };
+
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_BOOKS, 'readwrite');
+    tx.objectStore(STORE_BOOKS).put(initialRecord);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+
+  const totalSelected = tracksToDownload.length;
+  let successfulTracks = 0;
+
+  for (let i = 0; i < totalSelected; i++) {
+    const track = tracksToDownload[i];
+    const trackKey = `${activeBook.id}_${track.id}`;
+    let trackSuccess = false;
+
+    // Per-track retry (up to 2 attempts)
+    for (let attempt = 0; attempt < 2 && !trackSuccess; attempt++) {
+      try {
+        if (onProgress) {
+          onProgress(Math.round((i / totalSelected) * 100), totalBytes, track.title);
+        }
+
+        const blob = await fetchAudioBlob(track.audioUrl);
+        totalBytes += blob.size;
+
+        // Store track binary in IndexedDB with quota error handling
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(STORE_TRACKS, 'readwrite');
+            tx.objectStore(STORE_TRACKS).put({
+              trackKey,
+              bookId: activeBook.id,
+              trackId: track.id,
+              trackNumber: track.trackNumber || i + 1,
+              title: track.title,
+              durationSeconds: track.durationSeconds,
+              blob,
+              sizeBytes: blob.size,
+              savedAt: Date.now(),
+            });
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+          });
+          trackSuccess = true;
+          successfulTracks++;
+        } catch (storageErr) {
+          // Quota exceeded — stop downloading more tracks
+          if (storageErr instanceof DOMException && storageErr.name === 'QuotaExceededError') {
+            console.warn('Storage quota exceeded, stopping download');
+            i = totalSelected; // break outer loop
+            break;
+          }
+          throw storageErr;
+        }
+      } catch (err) {
+        if (attempt === 0) {
+          // Wait before retry
+          await new Promise((r) => setTimeout(r, 1500));
+        } else {
+          console.warn(`Failed to download track ${track.title} (${track.id}) after retries:`, err);
+        }
+      }
+    }
+
+    if (trackSuccess) {
+      const currentProgress = Math.round(((i + 1) / totalSelected) * 100);
+      if (onProgress) {
+        onProgress(currentProgress, totalBytes, track.title);
+      }
+
+      // Update progress record
+      const progressRecord: OfflineBookData = {
+        bookId: activeBook.id,
+        book: activeBook,
+        sizeBytes: totalBytes,
+        downloadedAt: Date.now(),
+        status:
+          i === totalSelected - 1
+            ? totalSelected >= allTracks.length
+              ? 'ready'
+              : 'partial'
+            : 'downloading',
+        progress: currentProgress,
+      };
+
+      await new Promise<void>((resolve) => {
+        const tx = db.transaction(STORE_BOOKS, 'readwrite');
+        tx.objectStore(STORE_BOOKS).put(progressRecord);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      });
+    }
+  }
+
+  // Finalize as ready, partial, or error
+  const isFull = successfulTracks >= allTracks.length && allTracks.length > 0;
+  const isPartial = successfulTracks > 0 && !isFull;
+  const finalStatus = isFull ? 'ready' : isPartial ? 'partial' : 'error';
+
+  const finalRecord: OfflineBookData = {
+    bookId: activeBook.id,
+    book: activeBook,
+    sizeBytes: Math.max(totalBytes, successfulTracks * 2.5 * 1024 * 1024),
+    downloadedAt: Date.now(),
+    status: finalStatus,
+    progress: 100,
+    lastSyncedAt: Date.now(),
+  };
+
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_BOOKS, 'readwrite');
+    tx.objectStore(STORE_BOOKS).put(finalRecord);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('libriaudio_offline_updated', { detail: { bookId: activeBook.id } })
+    );
+  }
+
+  // Cache cover art alongside audio so local content needs no internet.
+  try {
+    await saveOfflineCover(activeBook);
+  } catch {
+    // ignore
+  }
+}
+
+/* =========================================================================
+   NATIVE DOWNLOAD PATH (Android foreground service -> IndexedDB)
+   The native service streams each track with real progress and writes it to
+   app storage. JS persists each finished track's bytes into the same
+   IndexedDB stores the web player reads from, then the temp file is deleted.
+   ========================================================================= */
+
+export interface NativeTrackPayload {
+  audioUrl: string;
+  trackId: string;
+  trackKey: string;
+  trackNumber: number;
+  title: string;
+  durationSeconds: number;
+}
+
+/**
+ * Persist a single downloaded track blob into IndexedDB and bump the book
+ * record to 'downloading' with progress. Used by the native download path.
+ */
+export async function saveNativeTrack(
+  book: Audiobook,
+  payload: NativeTrackPayload,
+  blob: Blob,
+  progress: number,
+): Promise<void> {
+  const db = await openDB();
+  const trackKey = payload.trackKey;
+
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_TRACKS, 'readwrite');
+    tx.objectStore(STORE_TRACKS).put({
+      trackKey,
+      bookId: book.id,
+      trackId: payload.trackId,
+      trackNumber: payload.trackNumber,
+      title: payload.title,
+      durationSeconds: payload.durationSeconds,
+      blob,
+      sizeBytes: blob.size,
+      savedAt: Date.now(),
+    });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+
+  // Set/refresh the book record as downloading with current progress
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_BOOKS, 'readwrite');
+    const store = tx.objectStore(STORE_BOOKS);
+    const getReq = store.get(book.id);
+    getReq.onsuccess = () => {
+      const existing = getReq.result as OfflineBookData | undefined;
+      const record: OfflineBookData = {
+        bookId: book.id,
+        book,
+        sizeBytes: (existing?.sizeBytes || 0) + blob.size,
+        downloadedAt: Date.now(),
+        status: 'downloading',
+        progress: Math.max(existing?.progress || 0, progress),
+      };
+      store.put(record);
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/**
+ * Finalize a book after a native download finishes (or errors).
+ */
+export async function finalizeNativeBook(
+  book: Audiobook,
+  status: 'ready' | 'partial' | 'error',
+  totalBytes: number,
+): Promise<void> {
+  const db = await openDB();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_BOOKS, 'readwrite');
+    const record: OfflineBookData = {
+      bookId: book.id,
+      book,
+      sizeBytes: Math.max(totalBytes, 1),
+      downloadedAt: Date.now(),
+      status,
+      progress: status === 'ready' || status === 'partial' ? 100 : 0,
+      lastSyncedAt: Date.now(),
+    };
+    tx.objectStore(STORE_BOOKS).put(record);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('libriaudio_offline_updated', { detail: { bookId: book.id } })
+    );
+  }
+
+  // Cache cover art alongside audio so local content needs no internet.
+  try {
+    await saveOfflineCover(book);
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Trigger direct file download to user's browser device
+ */
+export async function downloadTrackFileToDevice(track: AudioTrack, bookTitle: string): Promise<void> {
+  try {
+    const blob = await fetchAudioBlob(track.audioUrl);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const cleanBook = bookTitle.replace(/[^a-zA-Z0-9]/g, '_');
+    const cleanTrack = (track.title || 'Track').replace(/[^a-zA-Z0-9]/g, '_');
+    a.download = `${cleanBook}_${cleanTrack}.mp3`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  } catch (err) {
+    console.error('Failed to download track file to device:', err);
+    throw err;
+  }
+}
+
+/**
+ * Delete a single downloaded track from a book
+ */
+export async function deleteDownloadedTrack(bookId: string, trackId: string): Promise<void> {
+  try {
+    const db = await openDB();
+    const trackKey = `${bookId}_${trackId}`;
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_TRACKS, 'readwrite');
+      tx.objectStore(STORE_TRACKS).delete(trackKey);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+
+    const remainingTracks = await getDownloadedTrackIdsForBook(bookId);
+    if (remainingTracks.length === 0) {
+      await deleteDownloadedBook(bookId);
+    } else {
+      // Update book status to partial
+      const book = await new Promise<OfflineBookData | null>((resolve) => {
+        const tx = db.transaction(STORE_BOOKS, 'readonly');
+        const req = tx.objectStore(STORE_BOOKS).get(bookId);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => resolve(null);
+      });
+      if (book) {
+        book.status = 'partial' as any;
+        const tx = db.transaction(STORE_BOOKS, 'readwrite');
+        tx.objectStore(STORE_BOOKS).put(book);
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('libriaudio_offline_updated', { detail: { bookId } })
+      );
+    }
+  } catch (e) {
+    console.warn('Error deleting track from offline storage:', e);
+  }
+}
+
+/**
+ * Delete a downloaded book and all its track files
+ */
+export async function deleteDownloadedBook(bookId: string): Promise<void> {
+  try {
+    const db = await openDB();
+
+    // Remove from books store
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_BOOKS, 'readwrite');
+      tx.objectStore(STORE_BOOKS).delete(bookId);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+
+    // Remove tracks matching bookId
+    const tx = db.transaction(STORE_TRACKS, 'readwrite');
+    const store = tx.objectStore(STORE_TRACKS);
+    const req = store.openCursor();
+
+    req.onsuccess = (event) => {
+      const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
+      if (cursor) {
+        if (cursor.value.bookId === bookId) {
+          cursor.delete();
+        }
+        cursor.continue();
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('libriaudio_offline_updated', { detail: { bookId } })
+      );
+    }
+
+    try {
+      await deleteOfflineCover(bookId);
+    } catch {
+      // ignore
+    }
+  } catch (e) {
+    console.warn('Error deleting downloaded book:', e);
+  }
+}
+
+/**
+ * Calculate total offline cache size (audiobooks + offline ebooks)
+ */
+export async function getTotalOfflineStorageUsed(): Promise<{
+  totalBytes: number;
+  bookCount: number;
+  ebookCount: number;
+  audiobookBytes: number;
+  ebookBytes: number;
+}> {
+  const books = await getDownloadedBooks();
+  const readyBooks = books.filter(
+    (b) => b.status === 'ready' || (b.status as string) === 'partial'
+  );
+  const audiobookBytes = readyBooks.reduce((acc, curr) => acc + (curr.sizeBytes || 0), 0);
+
+  const ebooks = await getAllOfflineEbooks();
+  const ebookBytes = ebooks.reduce((acc, curr) => acc + (curr.sizeBytes || 0), 0);
+
+  return {
+    totalBytes: audiobookBytes + ebookBytes,
+    bookCount: readyBooks.length,
+    ebookCount: ebooks.length,
+    audiobookBytes,
+    ebookBytes,
+  };
+}

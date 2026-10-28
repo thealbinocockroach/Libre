@@ -1,0 +1,398 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600;1,700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+:root {
+  --bg: #FBF4D8;
+  --surface: #FFFEF7;
+  --surface-raised: #FFFFFF;
+  --accent: #B64E43;
+  --accent-hover: #963D35;
+  --accent-dim: rgba(182, 78, 67, 0.14);
+  --accent-rgb: 182, 78, 67;
+  --text-main: #171717;
+  --text-dim: #45413A;
+  --border-subtle: #171717;
+  --on-accent: #FFFFFF;
+  --success: #4ADE80;
+  --success-dim: rgba(74, 222, 128, 0.16);
+  --warning: #FBBF24;
+  --warning-dim: rgba(251, 191, 36, 0.16);
+  --danger: #F87171;
+  --danger-dim: rgba(248, 113, 113, 0.16);
+  --overlay: rgba(23, 23, 23, 0.72);
+  --scrollbar: rgba(23, 23, 23, 0.35);
+  --font-header: 'Plus Jakarta Sans', sans-serif;
+  --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* App intro animation */
+@keyframes introLogoIn {
+  0% { opacity: 0; transform: scale(0.6) rotate(-8deg); }
+  55% { opacity: 1; transform: scale(1.08) rotate(2deg); }
+  75% { transform: scale(1) rotate(0deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+@keyframes introFadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes introShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.intro-logo-anim {
+  animation: introLogoIn 1.1s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.intro-text-anim {
+  animation: introFadeIn 0.8s ease 0.45s both;
+}
+.intro-tagline-anim {
+  animation: introFadeIn 0.8s ease 0.7s both;
+}
+.intro-progress-anim {
+  background: linear-gradient(90deg, transparent, currentColor, transparent);
+  background-size: 200% 100%;
+  animation: introShimmer 1.4s linear infinite;
+}
+
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Keep the WebView edge free of its thin scroll indicator. */
+* {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+*::-webkit-scrollbar {
+  display: none !important;
+  width: 0;
+  height: 0;
+}
+html, body, #root, #libriaudio-app-root { overscroll-behavior: none; }
+
+/* Full-screen profile pages keep the edge clean; inner lists retain scrolling. */
+.hide-screen-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.hide-screen-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.font-serif-display {
+  font-family: var(--font-header);
+}
+
+/* Reader prose follows app theme variables live, including device theme changes. */
+.reader-prose {
+  color: var(--text-main);
+  --tw-prose-body: var(--text-main);
+  --tw-prose-headings: var(--text-main);
+  --tw-prose-lead: var(--text-dim);
+  --tw-prose-links: var(--accent);
+  --tw-prose-bold: var(--text-main);
+  --tw-prose-counters: var(--text-dim);
+  --tw-prose-bullets: var(--text-dim);
+  --tw-prose-hr: var(--border-subtle);
+  --tw-prose-quotes: var(--text-main);
+  --tw-prose-quote-borders: var(--accent);
+  --tw-prose-captions: var(--text-dim);
+  --tw-prose-code: var(--text-main);
+  --tw-prose-pre-code: var(--text-main);
+  --tw-prose-pre-bg: var(--surface);
+  --tw-prose-th-borders: var(--border-subtle);
+  --tw-prose-td-borders: var(--border-subtle);
+}
+
+.glass-surface {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.glass-surface-hover:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(197, 160, 89, 0.35);
+}
+
+.gold-glow {
+  box-shadow: 0 0 25px rgba(197, 160, 89, 0.25);
+}
+
+.gold-accent-text {
+  color: var(--accent);
+}
+
+/* Light Mode Overrides for Crisp Typography */
+[data-theme-category="light"] {
+  --border-subtle: rgba(0, 0, 0, 0.08);
+}
+[data-theme-category="light"] body {
+  background-color: var(--bg);
+  color: var(--text-main);
+}
+
+/* Neo-brutalist pair: inked outlines, compact corners and print-like shadows. */
+:root[data-theme="neo-brutalist"] {
+  --border-subtle: #171717;
+  --neo-outline: #171717;
+  --neo-shadow: #171717;
+}
+:root[data-theme="neo-brutalist-dark"] {
+  --accent: #D87968;
+  --accent-hover: #EA9281;
+  --accent-dim: rgba(216, 121, 104, 0.18);
+  --accent-rgb: 216, 121, 104;
+  --on-accent: #171717;
+  --border-subtle: #766F63;
+  --neo-outline: #766F63;
+  --neo-shadow: #D87968;
+}
+:root[data-theme^="neo-brutalist"] [class*="rounded-"]:not(.rounded-full) {
+  border-radius: 0.35rem !important;
+}
+:root[data-theme^="neo-brutalist"] .border {
+  border-width: 2px !important;
+}
+:root[data-theme^="neo-brutalist"] button:not(.reader-select-handle) {
+  border: 2px solid var(--neo-outline) !important;
+  border-radius: 0.35rem !important;
+  box-shadow: 3px 3px 0 var(--neo-shadow) !important;
+  font-weight: 700;
+  transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+:root[data-theme^="neo-brutalist"] button:not(.reader-select-handle):active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--neo-shadow) !important;
+}
+:root[data-theme^="neo-brutalist"] button.toggle-switch-trigger {
+  border: 0 !important;
+  border-radius: 9999px !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  padding: 0 !important;
+}
+:root[data-theme^="neo-brutalist"] input:not([type="range"]),
+:root[data-theme^="neo-brutalist"] select,
+:root[data-theme^="neo-brutalist"] textarea {
+  border: 2px solid var(--neo-outline) !important;
+  border-radius: 0.35rem !important;
+}
+:root[data-theme^="neo-brutalist"] [class*="shadow-"]:not(button) {
+  box-shadow: 4px 4px 0 var(--neo-shadow) !important;
+}
+:root[data-theme^="neo-brutalist"] .font-serif-display {
+  font-style: normal !important;
+  letter-spacing: -0.035em;
+}
+:root[data-theme^="neo-brutalist"] .glass-surface {
+  background: var(--surface) !important;
+  border: 2px solid var(--neo-outline) !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+:root[data-theme^="neo-brutalist"] .glass-surface-hover:hover {
+  background: var(--surface-raised) !important;
+  border-color: var(--neo-outline) !important;
+}
+:root[data-theme^="neo-brutalist"] .gold-glow {
+  box-shadow: 4px 4px 0 var(--neo-shadow) !important;
+}
+
+/* Ebook Reader Highlight Markers */
+@keyframes onboardingFloat {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50% { transform: translateY(-7px) rotate(2deg); }
+}
+@keyframes onboardingOrbit {
+  to { transform: rotate(360deg); }
+}
+
+.libriaudio-hl {
+  border-radius: 3px;
+  padding: 1px 3px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, filter 0.2s ease;
+  text-decoration: none;
+}
+.libriaudio-hl:hover {
+  filter: brightness(1.15);
+}
+.libriaudio-hl-gold {
+  background-color: rgba(234, 179, 8, 0.28);
+  border-bottom: 2px solid #EAB308;
+  color: inherit;
+}
+.libriaudio-hl-emerald {
+  background-color: rgba(16, 185, 129, 0.28);
+  border-bottom: 2px solid #10B981;
+  color: inherit;
+}
+.libriaudio-hl-sapphire {
+  background-color: rgba(59, 130, 246, 0.28);
+  border-bottom: 2px solid #3B82F6;
+  color: inherit;
+}
+.libriaudio-hl-amethyst {
+  background-color: rgba(168, 85, 247, 0.28);
+  border-bottom: 2px solid #A855F7;
+  color: inherit;
+}
+.libriaudio-search-match {
+  background-color: rgba(251, 146, 60, 0.45);
+  border-bottom: 2px solid #F97316;
+  border-radius: 2px;
+  padding: 0 2px;
+}
+.libriaudio-search-match-active {
+  background-color: rgba(239, 68, 68, 0.6);
+  border-bottom: 2px solid #EF4444;
+  color: #FFFFFF;
+}
+
+/* Ebook Reader Image & Media Stabilization */
+.libriaudio-reader-img,
+article.prose img,
+article.prose svg,
+article.prose figure {
+  max-width: 100% !important;
+  height: auto !important;
+  display: block;
+  margin: 1.75rem auto;
+  border-radius: 0.75rem;
+  object-fit: contain;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  transition: opacity 0.3s ease;
+  contain: paint;
+}
+
+article.prose svg {
+  max-height: 80vh;
+}
+
+article.prose figure img {
+  margin: 0 auto;
+  box-shadow: none;
+}
+
+article.prose figcaption {
+  font-size: 0.8rem;
+  opacity: 0.75;
+  text-align: center;
+  margin-top: 0.5rem;
+  font-style: italic;
+}
+
+.libriaudio-img-error {
+  display: none !important;
+}
+
+/* Ebook Reader: text selection must stay visible after the finger lifts.
+   Native Android WebView selection handles keep the highlight up; these rules
+   make sure the selection tint is never lost while our floating toolbar is open. */
+#reader-content-scroll {
+  -webkit-tap-highlight-color: transparent;
+}
+#reader-content-scroll ::selection {
+  background: rgba(197, 160, 89, 0.45);
+  color: inherit;
+  -webkit-tap-highlight-color: rgba(197, 160, 89, 0.45);
+}
+#reader-content-scroll *::selection {
+  background: rgba(197, 160, 89, 0.45);
+  color: inherit;
+}
+#reader-content-scroll .libriaudio-sel-hold ::selection,
+#reader-content-scroll .libriaudio-sel-hold *::selection {
+  background: rgba(197, 160, 89, 0.5) !important;
+}
+
+/* Custom (Moon+ style) selection overlay â€” drawn entirely in JS, independent of
+   the WebView's native selection. */
+.libriaudio-active-sel {
+  position: absolute;
+  background: rgba(197, 160, 89, 0.4);
+  border-radius: 2px;
+  display: block;
+}
+
+.libriaudio-sel-handle {
+  position: fixed;
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 2px solid #c5a059;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  z-index: 9999;
+  cursor: pointer;
+  touch-action: none;
+  pointer-events: auto;
+}
+.libriaudio-sel-handle::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  transform: translate(-50%, -50%);
+  border-radius: 9999px;
+  background: #c5a059;
+}
+@keyframes mini-lighting-pulse {
+  0%, 100% {
+    opacity: 0.70;
+    transform: scale(0.995);
+    filter: blur(20px);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.025);
+    filter: blur(28px);
+  }
+}
+
+@keyframes mini-lighting-breathe {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(0.998);
+    filter: blur(16px);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(1.012);
+    filter: blur(22px);
+  }
+}
+
+/* Ambient glow field rendered behind the mini player card */
+.mini-lighting-halo {
+  pointer-events: none;
+  will-change: transform, opacity, filter;
+}
+
+/* Idle (paused) breath — subtle halo */
+.mini-lighting-idle {
+  animation: mini-lighting-breathe 4s ease-in-out infinite;
+}
+
+/* Playing — animated pulse in the dynamic color */
+.mini-lighting-active {
+  animation: mini-lighting-pulse 2.2s ease-in-out infinite;
+}
+
+

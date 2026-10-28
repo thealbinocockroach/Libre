@@ -1,0 +1,280 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Target,
+  Flame,
+  Trophy,
+  Sparkles,
+  Edit3,
+  Check,
+  ChevronRight,
+  Headphones,
+  BookOpen,
+  Plus,
+  Minus,
+} from 'lucide-react';
+import {
+  getTodayGoalProgress,
+  setDailyGoalMinutes,
+  GOAL_PRESETS,
+  DailyGoalProgress,
+} from '../utils/goalTracker';
+
+export const DailyGoalRing: React.FC = () => {
+  const [progress, setProgress] = useState<DailyGoalProgress>(getTodayGoalProgress());
+  const [isEditingGoal, setIsEditingGoal] = useState(false);
+  const [customGoal, setCustomGoal] = useState(progress.goalMinutes);
+
+  const refreshProgress = () => {
+    setProgress(getTodayGoalProgress());
+  };
+
+  useEffect(() => {
+    refreshProgress();
+    const interval = setInterval(refreshProgress, 2000);
+
+    const handleGoalChanged = () => refreshProgress();
+    window.addEventListener('libriaudio-goal-changed', handleGoalChanged);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('libriaudio-goal-changed', handleGoalChanged);
+    };
+  }, []);
+
+  const handleSelectPreset = (mins: number) => {
+    setDailyGoalMinutes(mins);
+    setCustomGoal(mins);
+    setIsEditingGoal(false);
+    refreshProgress();
+  };
+
+  const handleSaveCustom = (e: React.FormEvent) => {
+    e.preventDefault();
+    setDailyGoalMinutes(customGoal);
+    setIsEditingGoal(false);
+    refreshProgress();
+  };
+
+  // SVG Circular Math
+  const radius = 54;
+  const strokeWidth = 8;
+  const circumference = 2 * Math.PI * radius;
+  const normalizedProgress = Math.min(100, Math.max(0, progress.percentage));
+  const strokeDashoffset = circumference - (normalizedProgress / 100) * circumference;
+
+  return (
+    <div
+      id="daily-goal-widget"
+      className="p-5 rounded-2xl bg-[var(--surface)] border border-[var(--border-subtle)] shadow-xl relative overflow-hidden transition-all duration-300"
+    >
+      {/* Background Subtle Accent Aura */}
+      <div
+        className="absolute -top-12 -right-12 w-44 h-44 rounded-full blur-3xl opacity-20 pointer-events-none transition-all duration-700"
+        style={{
+          backgroundColor: progress.isGoalAchieved ? 'var(--success)' : 'var(--accent)',
+        }}
+      />
+
+      {/* Top Header */}
+      <div className="flex items-center justify-between gap-2 mb-4 relative z-10">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-xl bg-[var(--accent-dim)] border border-[var(--accent)] flex items-center justify-center text-[var(--accent)]">
+            {progress.isGoalAchieved ? (
+              <Trophy className="w-4 h-4 text-[var(--accent)]" />
+            ) : (
+              <Target className="w-4 h-4" />
+            )}
+          </div>
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-main)] flex items-center gap-2">
+              Daily Listening Goal
+              {progress.isGoalAchieved && (
+                <span className="px-2 py-0.5 rounded-full bg-[var(--success-dim)] text-[var(--success)] text-[10px] font-bold border border-[var(--success)] flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" /> Met Today
+                </span>
+              )}
+            </h3>
+            <p className="text-[11px] text-[var(--text-dim)] mt-0.5">
+              {progress.isGoalAchieved
+                ? `You reached your ${progress.goalMinutes}m target today!`
+                : `${progress.remainingMinutes} mins left to complete today's goal`}
+            </p>
+          </div>
+        </div>
+
+        {/* Action button to adjust goal */}
+        <button
+          id="btn-edit-daily-goal"
+          onClick={() => setIsEditingGoal(!isEditingGoal)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[var(--surface-raised)] hover:bg-[var(--accent-dim)] text-[var(--text-main)] hover:text-[var(--accent)] border border-[var(--border-subtle)] text-xs font-medium transition-all"
+          title="Adjust Daily Goal"
+        >
+          <Edit3 className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline font-mono">{progress.goalMinutes}m Goal</span>
+        </button>
+      </div>
+
+      {/* Goal Edit Drawer / Preset Bar */}
+      {isEditingGoal && (
+        <div className="mb-5 p-3.5 rounded-xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center justify-between text-xs text-[var(--text-main)]">
+            <span className="font-semibold text-[var(--text-main)]">Select Daily Goal Target:</span>
+            <button
+              onClick={() => setIsEditingGoal(false)}
+              className="text-[11px] text-[var(--text-dim)] hover:text-[var(--text-main)]"
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+            {GOAL_PRESETS.map((preset) => (
+              <button
+                key={preset}
+                id={`btn-goal-preset-${preset}`}
+                onClick={() => handleSelectPreset(preset)}
+                className={`py-2 px-1 rounded-xl text-xs font-mono font-bold transition-all border ${
+                  progress.goalMinutes === preset
+                    ? 'bg-[var(--accent)] text-[var(--on-accent)] border-[var(--accent)] shadow-md shadow-[rgba(var(--accent-rgb),0.3)]'
+                    : 'bg-[var(--surface-raised)] text-[var(--text-main)] hover:text-[var(--text-main)] border-[var(--border-subtle)] hover:border-[var(--border-subtle)]'
+                }`}
+              >
+                {preset} min
+              </button>
+            ))}
+          </div>
+
+          <form onSubmit={handleSaveCustom} className="flex items-center gap-2 pt-1">
+            <div className="flex-1 flex items-center bg-[var(--surface-raised)] border border-[var(--border-subtle)] rounded-xl px-3 py-1.5">
+              <span className="text-xs text-[var(--text-dim)] mr-2">Custom:</span>
+              <input
+                type="number"
+                min="5"
+                max="720"
+                value={customGoal}
+                onChange={(e) => setCustomGoal(parseInt(e.target.value, 10) || 5)}
+                className="w-16 bg-transparent text-xs font-mono text-[var(--text-main)] focus:outline-none"
+              />
+              <span className="text-xs text-[var(--text-dim)]">minutes / day</span>
+            </div>
+            <button
+              type="submit"
+              className="px-4 py-1.5 rounded-xl bg-[var(--accent)] text-[var(--on-accent)] font-semibold text-xs hover:bg-[var(--accent-hover)] transition-colors"
+            >
+              Apply
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* Main Goal Content with Progress Ring and Stats */}
+      <div className="flex flex-col sm:flex-row items-center gap-6 relative z-10">
+        {/* SVG Progress Ring */}
+        <div className="relative w-36 h-36 shrink-0 flex items-center justify-center">
+          <svg className="w-full h-full -rotate-90 transform" viewBox="0 0 130 130">
+            {/* Background Track */}
+            <circle
+              cx="65"
+              cy="65"
+              r={radius}
+              stroke="var(--border-subtle)"
+              strokeWidth={strokeWidth}
+              fill="transparent"
+            />
+            {/* Progress Stroke */}
+            <circle
+              cx="65"
+              cy="65"
+              r={radius}
+              stroke={progress.isGoalAchieved ? 'var(--success)' : 'url(#goalAccentGradient)'}
+              strokeWidth={strokeWidth}
+              strokeDasharray={circumference}
+              strokeDashoffset={strokeDashoffset}
+              strokeLinecap="round"
+              fill="transparent"
+              className="transition-all duration-1000 ease-out"
+            />
+            {/* Gradient definition */}
+            <defs>
+              <linearGradient id="goalAccentGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="var(--accent-hover)" />
+                <stop offset="100%" stopColor="var(--accent)" />
+              </linearGradient>
+            </defs>
+          </svg>
+
+          {/* Center Info inside Ring */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+            <span className="text-2xl font-bold font-mono tracking-tight text-[var(--text-main)]">
+              {progress.percentage}%
+            </span>
+            <span className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold mt-0.5">
+              {progress.listenedMinutes} / {progress.goalMinutes}m
+            </span>
+          </div>
+        </div>
+
+        {/* Goal Highlights & Streak Column */}
+        <div className="flex-1 w-full space-y-3">
+          <div className="grid grid-cols-2 gap-2.5">
+            <div className="p-3 rounded-xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-[var(--text-dim)] text-[10px] uppercase font-semibold">
+                <span>Today's Audio</span>
+                <Headphones className="w-3.5 h-3.5 text-[var(--accent)]" />
+              </div>
+              <div className="mt-1">
+                <span className="text-base font-bold font-mono text-[var(--text-main)]">
+                  {progress.listenedMinutes}m
+                </span>
+                <span className="text-[11px] text-[var(--text-dim)] ml-1">logged</span>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-[var(--surface-raised)] border border-[var(--border-subtle)] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-[var(--text-dim)] text-[10px] uppercase font-semibold">
+                <span>Daily Streak</span>
+                <Flame className="w-3.5 h-3.5 text-[var(--accent)] fill-current" />
+              </div>
+              <div className="mt-1">
+                <span className="text-base font-bold font-mono text-[var(--warning)]">
+                  {progress.dailyStreak} Day{progress.dailyStreak !== 1 ? 's' : ''}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Progress Bar & Dynamic Motivational Message */}
+          <div className="p-3 rounded-xl bg-[var(--surface-raised)] border border-[var(--border-subtle)]">
+            <div className="flex items-center justify-between text-[11px] mb-1.5">
+              <span className="text-[var(--text-main)] font-medium">
+                {progress.isGoalAchieved ? (
+                  <span className="text-[var(--success)] font-semibold flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" /> Target Complete!
+                  </span>
+                ) : (
+                  <span>
+                    {progress.remainingMinutes} min{progress.remainingMinutes !== 1 ? 's' : ''} remaining
+                  </span>
+                )}
+              </span>
+              <span className="text-[var(--text-dim)] font-mono text-[10px]">
+                Target: {progress.goalMinutes} mins
+              </span>
+            </div>
+
+            <div className="w-full h-2 bg-[var(--surface-raised)] rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-700 ${
+                  progress.isGoalAchieved
+                    ? 'bg-[var(--success)]'
+                    : 'bg-[var(--accent)] shadow-[0_0_12px_rgba(var(--accent-rgb),0.4)]'
+                }`}
+                style={{ width: `${progress.percentage}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
